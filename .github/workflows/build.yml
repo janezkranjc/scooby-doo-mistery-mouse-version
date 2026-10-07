@@ -1,8 +1,12 @@
 name: Build
 
+# Every push and pull request is built on all three platforms. Pushing a tag
+# that starts with "v" (for example v0.1.0) also publishes the three programs
+# as a GitHub release.
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -14,15 +18,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Linux
+          - name: linux-x86_64
             os: ubuntu-24.04
-            program: build/scooby
-          - name: macOS
+            program: scooby
+            cmake: ''
+          - name: macos-universal
             os: macos-14
-            program: build/scooby
-          - name: Windows
+            program: scooby
+            cmake: '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
+          - name: windows-x86_64
             os: windows-2022
-            program: build/scooby.exe
+            program: scooby.exe
+            cmake: ''
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,7 +43,8 @@ jobs:
           sudo apt-get install -y libx11-dev libxrandr-dev libxcursor-dev libxi-dev libudev-dev libgl1-mesa-dev libfreetype-dev libflac-dev libvorbis-dev libogg-dev
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_DISABLE_FIND_PACKAGE_SFML=ON" ${{ matrix.cmake && format('"{0}"', matrix.cmake) || '' }}
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -47,14 +55,63 @@ jobs:
         shell: bash
         run: |
           set +e
-          out=$("${{ matrix.program }}" --frames 1 2>&1)
+          out=$("build/${{ matrix.program }}" --frames 1 2>&1)
           code=$?
           echo "$out"
           test "$code" -eq 1 || { echo "expected exit code 1, got $code"; exit 1; }
           echo "$out" | grep -q "ROM not found"
 
+      # The program, the README and the licences of the libraries built into it.
+      - name: Package
+        shell: bash
+        run: |
+          dir="scooby-${{ matrix.name }}"
+          mkdir -p "$dir/licenses"
+          cp "build/${{ matrix.program }}" README.md "$dir/"
+          cp third_party/ymfm/LICENSE "$dir/licenses/ymfm.txt"
+          cp third_party/z80/LICENSE "$dir/licenses/z80.txt"
+          cp build/_deps/sfml-src/license.md "$dir/licenses/SFML.txt"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a "$dir.zip" "$dir"
+          else
+            tar czf "$dir.tar.gz" "$dir"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: scooby-${{ matrix.name }}
-          path: ${{ matrix.program }}
+          path: |
+            scooby-${{ matrix.name }}.zip
+            scooby-${{ matrix.name }}.tar.gz
           if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          You need your own ROM of Scooby-Doo Mystery (USA) for the Sega Genesis. No part of the game is included.
+
+          1. Download the file for your system and unpack it.
+          2. Put the ROM (the plain, unzipped 2 MB file) in the same folder as the program.
+          3. Start the program.
+
+          - **Windows:** `scooby.exe`. SmartScreen may warn about an unknown publisher; choose "More info", then "Run anyway".
+          - **macOS:** the program is not signed. Before the first start, run `xattr -d com.apple.quarantine scooby` in Terminal in that folder, then `./scooby`.
+          - **Linux:** built on Ubuntu 24.04. It needs the usual X11, OpenGL, FreeType, FLAC and Vorbis libraries, which most desktops already have.
+
+          Controls and troubleshooting are in the README inside the download.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md

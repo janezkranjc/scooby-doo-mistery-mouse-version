@@ -16,6 +16,13 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/z80/z80.c" OR NOT EXISTS "${CMAKE
                   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" COMMAND_ERROR_IS_FATAL ANY)
 endif()
 
+# On Windows link the C++ runtime statically, so the program runs on a
+# machine without the Visual C++ redistributable.
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  set(SFML_USE_STATIC_STD_LIBS ON CACHE BOOL "" FORCE)
+endif()
+
 # Use an installed SFML 3 if there is one, otherwise download and build it.
 find_package(SFML 3 QUIET COMPONENTS Graphics Window Audio System)
 if(NOT SFML_FOUND)
