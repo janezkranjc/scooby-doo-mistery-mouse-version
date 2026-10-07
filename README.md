@@ -57,19 +57,21 @@ The program ends up at `build/scooby` (`build\scooby.exe` on Windows).
 
 You need your own dump of the USA release of the cartridge: a plain 2 MB
 file, usually ending in `.md`, `.bin` or `.gen`. If it is in a zip, unzip it
-first. Then give its path to the program:
+first.
+
+Put the file in the same folder as the program (`build/`) and start the
+program. The file can have any name; the program recognises it by its
+contents. A `rom` folder beside the program or in the source folder works
+too. If no ROM is found, a message tells you which folder to put it in.
+
+You can also name the file yourself:
 
 ```bash
 ./build/scooby "path/to/Scooby-Doo Mystery (USA).md"
 ```
 
-```powershell
-build\scooby.exe "C:\path\to\Scooby-Doo Mystery (USA).md"
-```
-
-On Windows you can also drag the ROM file onto `scooby.exe`. If you put the
-file at `rom/Scooby-Doo Mystery (USA).md` inside the source folder and run
-the program from there, no argument is needed.
+On Windows that is `build\scooby.exe "C:\path\to\rom.md"`, or drag the ROM
+file onto `scooby.exe`.
 
 Options: `--fullscreen` starts in fullscreen, `--scale N` sets the window
 size, `--mute` turns sound off. The picture is always shown 4:3 and centred,
@@ -79,9 +81,10 @@ with black bars where the display is wider.
 
 | Message | Meaning |
 |---|---|
-| `cannot open ...` | The path to the ROM is wrong. Put it in quotes if it has spaces |
-| `unexpected ROM size` | The file is not a plain 2 MB image. It may still be zipped, or be an interleaved `.smd` dump |
-| `checksum mismatch` | It is a different release or a modified ROM. Only the USA release works |
+| "ROM not found" | No usable ROM is in the program's folder. Put it there |
+| "The file could not be opened" | The path you gave is wrong. Put it in quotes if it has spaces |
+| "It is not a plain 2 MB cartridge image" | The file may still be zipped, or be an interleaved `.smd` dump |
+| "It is not the USA release" | A different release or a modified ROM. Only the USA release works |
 | CMake cannot find a package on Linux | One of the libraries in step 1 is missing |
 
 Tested on macOS (Apple Silicon, Clang) and Ubuntu 24.04 (GCC 13). The

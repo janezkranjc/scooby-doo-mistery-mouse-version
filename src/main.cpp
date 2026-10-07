@@ -9,12 +9,22 @@
 #include "game/sound.h"
 #include <SFML/Audio.hpp>
 #include <SFML/Graphics.hpp>
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 namespace {
 
@@ -62,7 +72,7 @@ private:
 };
 
 struct Options {
-    std::string rom = "rom/Scooby-Doo Mystery (USA).md";
+    std::string rom;            // empty: look for it next to the program
     int scale = 3;
     long frames = -1;           // headless: stop after this many frames
     std::string dumpDir;        // headless: write frame/RAM dumps here
@@ -358,11 +368,100 @@ int runWindowed(const Options& o) {
 
 }  // namespace
 
+namespace {
+
+namespace fs = std::filesystem;
+
+// The folder the program file is in.
+fs::path programFolder(const char* argv0) {
+    std::error_code ec;
+#if defined(_WIN32)
+    wchar_t buf[4096];
+    const DWORD n = GetModuleFileNameW(nullptr, buf, 4096);
+    if (n > 0 && n < 4096) return fs::path(buf).parent_path();
+#elif defined(__APPLE__)
+    char buf[4096];
+    uint32_t size = sizeof buf;
+    if (_NSGetExecutablePath(buf, &size) == 0) {
+        const fs::path p = fs::canonical(buf, ec);
+        if (!ec) return p.parent_path();
+    }
+#else
+    const fs::path self = fs::read_symlink("/proc/self/exe", ec);
+    if (!ec) return self.parent_path();
+#endif
+    const fs::path p = fs::absolute(argv0 ? argv0 : ".", ec);
+    return ec ? fs::current_path(ec) : p.parent_path();
+}
+
+// Looks for the cartridge image by content, whatever it is called: any 2 MB
+// file in these folders that the loader accepts.
+std::string findRom(const std::vector<fs::path>& folders) {
+    std::error_code ec;
+    for (const fs::path& dir : folders) {
+        std::vector<fs::path> files;
+        for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code e2;
+            if (it->is_regular_file(e2) && it->file_size(e2) == 0x200000) files.push_back(it->path());
+        }
+        std::sort(files.begin(), files.end());
+        for (const fs::path& f : files)
+            if (M.loadRom(f.string()).empty()) return f.string();
+    }
+    return "";
+}
+
+// Shown in a dialog as well as on the terminal, because someone who
+// double-clicks the program never sees the terminal.
+void tellUser(const std::string& title, const std::string& text, bool dialog) {
+    std::fprintf(stderr, "%s\n\n%s\n", title.c_str(), text.c_str());
+    if (!dialog) return;
+#if defined(_WIN32)
+    MessageBoxA(nullptr, text.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+#else
+    // The text goes through the environment so nothing in it is read as a command.
+    setenv("SCOOBY_MSG_TITLE", title.c_str(), 1);
+    setenv("SCOOBY_MSG_TEXT", text.c_str(), 1);
+#if defined(__APPLE__)
+    const int rc = std::system("osascript -e 'display dialog (system attribute \"SCOOBY_MSG_TEXT\") with title (system attribute \"SCOOBY_MSG_TITLE\") buttons {\"OK\"} default button 1' >/dev/null 2>&1");
+#else
+    const int rc = std::system("(zenity --info --no-markup --width=480 --title=\"$SCOOBY_MSG_TITLE\" --text=\"$SCOOBY_MSG_TEXT\" "
+                               "|| kdialog --title \"$SCOOBY_MSG_TITLE\" --msgbox \"$SCOOBY_MSG_TEXT\" "
+                               "|| xmessage -center \"$SCOOBY_MSG_TEXT\") >/dev/null 2>&1");
+#endif
+    (void)rc;
+#endif
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
-    const Options o = parse(argc, argv);
+    Options o = parse(argc, argv);
+    if (o.rom.empty()) {
+        // No ROM named: look beside the program, in the folder it was started
+        // from, and in a `rom` folder in either (or one level up, which is
+        // where it sits when the program is in `build/`).
+        std::error_code ec;
+        const fs::path exe = programFolder(argc > 0 ? argv[0] : nullptr), cwd = fs::current_path(ec);
+        o.rom = findRom({exe, exe / "rom", exe.parent_path() / "rom", cwd, cwd / "rom"});
+        if (o.rom.empty()) {
+            tellUser("Scooby-Doo Mystery: ROM not found",
+                     "This program needs your own copy of the game to run.\n\n"
+                     "Put the ROM of Scooby-Doo Mystery (USA) for the Sega Genesis in this folder:\n\n    " + exe.string() + "\n\n"
+                     "and start the program again. The file can have any name. It must be the plain, "
+                     "unzipped 2 MB cartridge image (usually ending in .md, .bin or .gen).\n\n"
+                     "You can also drag the ROM file onto the program, or give its path as an argument.",
+                     !o.headless);
+            return 1;
+        }
+    }
     const std::string err = M.loadRom(o.rom);
     if (!err.empty()) {
-        std::fprintf(stderr, "error: %s\nusage: scooby [--rom path] [--scale n] [--fullscreen]\n", err.c_str());
+        std::string why = err;
+        if (err.rfind("cannot open", 0) == 0) why = "The file could not be opened. Check the path.";
+        else if (err.rfind("unexpected ROM size", 0) == 0) why = "It is not a plain 2 MB cartridge image. If it is a zip, unzip it first.";
+        else if (err.rfind("checksum", 0) == 0 || err.rfind("not a", 0) == 0) why = "It is not the USA release of Scooby-Doo Mystery, or the file is damaged or modified.";
+        tellUser("Scooby-Doo Mystery: this ROM cannot be used", o.rom + "\n\n" + why, !o.headless);
         return 1;
     }
     M.vdp.reset();
