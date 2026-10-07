@@ -3,7 +3,10 @@
 #include "addr.h"
 #include "room.h"
 #include <cstdio>
+#if __has_include(<execinfo.h>)
 #include <execinfo.h>
+#define SCOOBY_HAVE_BACKTRACE 1
+#endif
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -385,7 +388,9 @@ int chooseLine(int count) {
 void checkAbort() {
     if (abortRequested) {
         abortRequested = false;
+#ifdef SCOOBY_HAVE_BACKTRACE
         if (getenv("SCOOBY_ABORTTRACE")) { void* bt[24]; backtrace_symbols_fd(bt, backtrace(bt, 24), 2); }
+#endif
         throw Abort{};
     }
 }
