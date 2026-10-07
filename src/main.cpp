@@ -235,10 +235,25 @@ int runHeadless(const Options& o) {
     return 0;
 }
 
+// Which keys are held, kept from the window's own key events. Asking the
+// system directly (sf::Keyboard::isKeyPressed) reads the keyboard device for
+// every application, and macOS then demands the Input Monitoring permission.
+bool g_keyDown[sf::Keyboard::KeyCount] = {};
+
+void noteKey(sf::Keyboard::Key k, bool down) {
+    const int i = int(k);
+    if (i >= 0 && i < int(sf::Keyboard::KeyCount)) g_keyDown[i] = down;
+}
+
+bool keyDown(sf::Keyboard::Key k) {
+    const int i = int(k);
+    return i >= 0 && i < int(sf::Keyboard::KeyCount) && g_keyDown[i];
+}
+
 u8 readPad(const sf::RenderWindow& window) {
     if (!window.hasFocus()) return 0;
     using K = sf::Keyboard::Key;
-    auto down = [](K k) { return sf::Keyboard::isKeyPressed(k); };
+    auto down = [](K k) { return keyDown(k); };
     u8 p = 0;
     if (down(K::Up)) p |= PadUp;
     if (down(K::Down)) p |= PadDown;
@@ -291,7 +306,11 @@ int runWindowed(const Options& o) {
         while (const std::optional event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) window.close();
             if (const auto* wheel = event->getIf<sf::Event::MouseWheelScrolled>()) M.mouseWheel += wheel->delta > 0 ? 1 : wheel->delta < 0 ? -1 : 0;
+            // Releases are not delivered while the window is in the background.
+            if (event->is<sf::Event::FocusLost>()) std::fill(std::begin(g_keyDown), std::end(g_keyDown), false);
+            if (const auto* up = event->getIf<sf::Event::KeyReleased>()) noteKey(up->code, false);
             if (const auto* k = event->getIf<sf::Event::KeyPressed>()) {
+                noteKey(k->code, true);
                 using K = sf::Keyboard::Key;
                 if (k->code == K::Escape) { if (fullscreen) toggle = true; else window.close(); }
                 if (k->code == K::F11 || k->code == K::F || (k->code == K::Enter && k->alt)) toggle = true;
@@ -300,6 +319,7 @@ int runWindowed(const Options& o) {
         if (toggle) {
             fullscreen = !fullscreen;
             openWindow(window, fullscreen, o.scale);
+            std::fill(std::begin(g_keyDown), std::end(g_keyDown), false);   // the old window's releases never arrive
         }
         if (!window.isOpen()) break;
 
@@ -309,7 +329,7 @@ int runWindowed(const Options& o) {
         window.setView(sf::View(sf::FloatRect({0.f, 0.f}, {float(ws.x), float(ws.y)})));
 
         M.pad1 = readPad(window);
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LAlt) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RAlt))
+        if (keyDown(sf::Keyboard::Key::LAlt) || keyDown(sf::Keyboard::Key::RAlt))
             M.pad1 &= u8(~PadStart);   // Alt+Enter is the fullscreen toggle, not Start
         // Mouse: position drives the pointer, left acts, right cancels,
         // middle swaps verbs and inventory. On the title menus a click confirms.
