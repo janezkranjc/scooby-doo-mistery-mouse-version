@@ -45,7 +45,7 @@ in the "Developer PowerShell for VS 2022" from the Start menu.
 The same on every platform:
 
 ```bash
-git clone --recursive <this repository's URL> scooby
+git clone --recursive https://github.com/janezkranjc/scooby-doo-mistery-mouse-version.git scooby
 cd scooby
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
