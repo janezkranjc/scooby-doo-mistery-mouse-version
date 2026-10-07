@@ -21,15 +21,12 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-24.04
             program: scooby
-            cmake: ''
           - name: macos-universal
             os: macos-14
             program: scooby
-            cmake: '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
           - name: windows-x86_64
             os: windows-2022
             program: scooby.exe
-            cmake: ''
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,7 +41,12 @@ jobs:
 
       - name: Configure
         shell: bash
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_DISABLE_FIND_PACKAGE_SFML=ON" ${{ matrix.cmake && format('"{0}"', matrix.cmake) || '' }}
+        run: |
+          args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_DISABLE_FIND_PACKAGE_SFML=ON)
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            args+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0)
+          fi
+          cmake -S . -B build "${args[@]}"
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -62,7 +64,8 @@ jobs:
           echo "$out" | grep -q "ROM not found"
 
       # The program, the README and the licences of the libraries built into it.
-      - name: Package
+      - name: Package (Linux and Windows)
+        if: runner.os != 'macOS'
         shell: bash
         run: |
           dir="scooby-${{ matrix.name }}"
@@ -77,12 +80,73 @@ jobs:
             tar czf "$dir.tar.gz" "$dir"
           fi
 
+      # macOS: an app bundle in a disk image. When the signing secrets are set
+      # (see docs/RELEASING.md) the app and the image are signed with the
+      # Developer ID certificate and notarized by Apple; otherwise the image is
+      # left unsigned and still works after the quarantine flag is removed.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          case "$version" in [0-9]*.[0-9]*) ;; *) version="0.0.0" ;; esac
+          stage="stage"
+          app="$stage/Scooby.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/licenses" "$stage/licenses"
+          cp build/scooby "$app/Contents/MacOS/scooby"
+          sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          cp third_party/ymfm/LICENSE "$stage/licenses/ymfm.txt"
+          cp third_party/z80/LICENSE "$stage/licenses/z80.txt"
+          cp build/_deps/sfml-src/license.md "$stage/licenses/SFML.txt"
+          cp "$stage"/licenses/* "$app/Contents/Resources/licenses/"
+          cp README.md "$stage/"
+          lipo -archs "$app/Contents/MacOS/scooby"
+          dmg="scooby-${{ matrix.name }}.dmg"
+
+          if [ -n "$CERT_P12" ]; then
+            keychain="$RUNNER_TEMP/signing.keychain-db"
+            kcpass="$(uuidgen)"
+            echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security create-keychain -p "$kcpass" "$keychain"
+            security set-keychain-settings -lut 3600 "$keychain"
+            security unlock-keychain -p "$kcpass" "$keychain"
+            security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+            security set-key-partition-list -S apple-tool:,apple: -k "$kcpass" "$keychain" >/dev/null
+            security list-keychains -d user -s "$keychain" login.keychain-db
+            rm "$RUNNER_TEMP/cert.p12"
+            identity="$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+            test -n "$identity" || { echo "no Developer ID Application identity in the certificate"; exit 1; }
+            codesign --force --options runtime --timestamp --sign "$identity" "$app"
+            codesign --verify --strict --verbose=2 "$app"
+            hdiutil create -volname "Scooby" -srcfolder "$stage" -ov -format UDZO "$dmg"
+            codesign --force --timestamp --sign "$identity" "$dmg"
+            if [ -n "$APPLE_ID" ]; then
+              xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+              xcrun stapler staple "$dmg"
+              spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
+            else
+              echo "::warning::Signed but not notarized: the notarization secrets are not set"
+            fi
+            security delete-keychain "$keychain"
+          else
+            echo "::warning::macOS build is not signed: the signing secrets are not set"
+            codesign --force --sign - "$app"
+            hdiutil create -volname "Scooby" -srcfolder "$stage" -ov -format UDZO "$dmg"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: scooby-${{ matrix.name }}
           path: |
             scooby-${{ matrix.name }}.zip
             scooby-${{ matrix.name }}.tar.gz
+            scooby-${{ matrix.name }}.dmg
           if-no-files-found: error
 
   release:
@@ -105,11 +169,11 @@ jobs:
           You need your own ROM of Scooby-Doo Mystery (USA) for the Sega Genesis. No part of the game is included.
 
           1. Download the file for your system and unpack it.
-          2. Put the ROM (the plain, unzipped 2 MB file) in the same folder as the program.
+          2. Put the ROM (the plain, unzipped 2 MB file) in the same folder as the program. On macOS you are asked for it instead.
           3. Start the program.
 
           - **Windows:** `scooby.exe`. SmartScreen may warn about an unknown publisher; choose "More info", then "Run anyway".
-          - **macOS:** the program is not signed. Before the first start, run `xattr -d com.apple.quarantine scooby` in Terminal in that folder, then `./scooby`.
+          - **macOS:** open the disk image and drag Scooby to a folder of your choice. On first start it asks you to choose your ROM and remembers it. If macOS says the app cannot be checked, this build was not notarized: right-click the app and choose Open.
           - **Linux:** built on Ubuntu 24.04. It needs the usual X11, OpenGL, FreeType, FLAC and Vorbis libraries, which most desktops already have.
 
           Controls and troubleshooting are in the README inside the download.

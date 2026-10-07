@@ -433,6 +433,47 @@ void tellUser(const std::string& title, const std::string& text, bool dialog) {
 #endif
 }
 
+#if defined(__APPLE__)
+// macOS may run a downloaded app from a hidden, read-only copy, so "the
+// folder the program is in" is not somewhere a person can put a file. There
+// the ROM is picked in a file dialog once and its location remembered.
+fs::path rememberedRomFile() {
+    const char* home = std::getenv("HOME");
+    return fs::path(home ? home : ".") / "Library" / "Application Support" / "scooby" / "rom-path.txt";
+}
+
+std::string runAndRead(const char* command) {
+    std::string out;
+    if (FILE* p = popen(command, "r")) {
+        char buf[512];
+        while (std::fgets(buf, sizeof buf, p)) out += buf;
+        pclose(p);
+    }
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+    return out;
+}
+
+// Asks for the ROM until a usable one is chosen or the person gives up.
+std::string chooseRom() {
+    for (;;) {
+        const std::string picked = runAndRead(
+            "osascript -e 'POSIX path of (choose file with prompt \"Choose your ROM of Scooby-Doo Mystery (USA) for the Sega Genesis. "
+            "It must be the plain, unzipped 2 MB file. No part of the game is included with this program.\")' 2>/dev/null");
+        if (picked.empty()) return "";
+        if (M.loadRom(picked).empty()) {
+            std::error_code ec;
+            fs::create_directories(rememberedRomFile().parent_path(), ec);
+            std::ofstream(rememberedRomFile()) << picked << "\n";
+            return picked;
+        }
+        setenv("SCOOBY_MSG_TEXT", (picked + "\n\nThis file cannot be used. It must be the unzipped 2 MB ROM of the USA release.").c_str(), 1);
+        const std::string again = runAndRead("osascript -e 'button returned of (display dialog (system attribute \"SCOOBY_MSG_TEXT\") "
+                                             "with title \"Scooby-Doo Mystery\" buttons {\"Quit\", \"Choose another\"} default button 2)' 2>/dev/null");
+        if (again != "Choose another") return "";
+    }
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -443,7 +484,24 @@ int main(int argc, char** argv) {
         // where it sits when the program is in `build/`).
         std::error_code ec;
         const fs::path exe = programFolder(argc > 0 ? argv[0] : nullptr), cwd = fs::current_path(ec);
-        o.rom = findRom({exe, exe / "rom", exe.parent_path() / "rom", cwd, cwd / "rom"});
+        std::vector<fs::path> folders{exe, exe / "rom", exe.parent_path() / "rom", cwd, cwd / "rom"};
+        // Inside a macOS app bundle the natural place is beside the .app.
+        if (exe.filename() == "MacOS" && exe.parent_path().filename() == "Contents") {
+            const fs::path beside = exe.parent_path().parent_path().parent_path();
+            folders.insert(folders.begin(), {beside, beside / "rom"});
+        }
+        o.rom = findRom(folders);
+#if defined(__APPLE__)
+        if (o.rom.empty()) {
+            std::string saved;
+            std::ifstream in(rememberedRomFile());
+            if (std::getline(in, saved) && M.loadRom(saved).empty()) o.rom = saved;
+        }
+        if (o.rom.empty() && !o.headless) {
+            o.rom = chooseRom();
+            if (o.rom.empty()) return 1;
+        }
+#endif
         if (o.rom.empty()) {
             tellUser("Scooby-Doo Mystery: ROM not found",
                      "This program needs your own copy of the game to run.\n\n"
