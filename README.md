@@ -87,8 +87,10 @@ with black bars where the display is wider.
 | "It is not the USA release" | A different release or a modified ROM. Only the USA release works |
 | CMake cannot find a package on Linux | One of the libraries in step 1 is missing |
 
-Tested on macOS (Apple Silicon, Clang) and Ubuntu 24.04 (GCC 13). The
-Windows steps have not been tried on a real machine yet; please report what
+Played on macOS (Apple Silicon, Clang) and checked on Ubuntu 24.04 (GCC 13).
+Every push is built on Linux, macOS and Windows by GitHub Actions
+(`.github/workflows/build.yml`), so the Windows build compiles and starts,
+but nobody has played it on a real Windows machine yet; please report what
 breaks.
 
 ## Controls
