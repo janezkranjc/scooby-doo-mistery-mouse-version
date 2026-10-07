@@ -1,0 +1,6 @@
+[submodule "third_party/ymfm"]
+	path = third_party/ymfm
+	url = https://github.com/aaronsgiles/ymfm
+[submodule "third_party/z80"]
+	path = third_party/z80
+	url = https://github.com/superzazu/z80

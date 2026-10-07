@@ -1,0 +1,8 @@
+# The ROM and everything derived from it stay out of version control.
+rom/
+work/
+build/
+*.md.bin
+.DS_Store
+solution.txt
+__pycache__/
