@@ -1,0 +1,60 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-24.04
+            program: build/scooby
+          - name: macOS
+            os: macos-14
+            program: build/scooby
+          - name: Windows
+            os: windows-2022
+            program: build/scooby.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The same packages the README lists.
+      - name: Install libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxcursor-dev libxi-dev libudev-dev libgl1-mesa-dev libfreetype-dev libflac-dev libvorbis-dev libogg-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # No ROM is available here, so this only checks that the program starts
+      # and reports the missing ROM the way it should.
+      - name: Start without a ROM
+        shell: bash
+        run: |
+          set +e
+          out=$("${{ matrix.program }}" --frames 1 2>&1)
+          code=$?
+          echo "$out"
+          test "$code" -eq 1 || { echo "expected exit code 1, got $code"; exit 1; }
+          echo "$out" | grep -q "ROM not found"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scooby-${{ matrix.name }}
+          path: ${{ matrix.program }}
+          if-no-files-found: error
