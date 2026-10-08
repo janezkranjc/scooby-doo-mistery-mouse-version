@@ -26,7 +26,7 @@ void paletteCycles() {
         const u16 head = R16(a);
         for (u32 i = 0; i < n; i++) W16(a + 2 * i, R16(a + 2 * i + 2));
         W16(a + 2 * u32(n), head);
-        ll::dmaCram(a, first, u16(n + 1));
+        ll::dmaCram(a, u16(first * 2), u16(n + 1));   // the destination is a byte offset into colour RAM
     }
 }
 

@@ -138,7 +138,7 @@ void opPaletteCycle(bool exec) {   // 0x1A
         if (sarg(8) < 0) {
             bclrReg(0xFF0ACD, slot);
             const u16 first = arg(4);
-            ll::dmaCram(TargetPalette + u32(first) * 2, first, u16(arg(6) - first));
+            ll::dmaCram(TargetPalette + u32(first) * 2, u16(first * 2), u16(arg(6) - first));   // byte offset, as at 0x2654
         } else {
             W16(0xFF087C + slot * 2, arg(4));
             W16(0xFF0886 + slot * 2, arg(6));
