@@ -127,3 +127,18 @@ Not done yet: the hidden debug menus, which are not needed to play. See `docs/` 
   reference-emulator harness used to check the port.
 - `docs` notes on the engine and the script interpreter.
 - `tests/vdptest.cpp` checks the video chip model against emulator captures.
+
+## Licence
+
+The code in this repository is under the MIT licence; see `LICENSE`.
+
+That licence covers this code only. It grants no rights to the original
+game, its graphics, text, music or program, or to any names and trademarks
+connected with it, all of which belong to their owners. No part of the game
+is included here, and you need your own legally obtained ROM to use the
+program. This project is not affiliated with or endorsed by the game's
+publishers or rights holders.
+
+The libraries built into the program keep their own licences: SFML (zlib),
+ymfm (BSD-3-Clause) and the Z80 core (MIT). Their texts are in
+`third_party/` and in the `licenses` folder of each download.

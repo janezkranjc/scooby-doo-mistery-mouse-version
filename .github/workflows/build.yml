@@ -70,7 +70,7 @@ jobs:
         run: |
           dir="scooby-${{ matrix.name }}"
           mkdir -p "$dir/licenses"
-          cp "build/${{ matrix.program }}" README.md "$dir/"
+          cp "build/${{ matrix.program }}" README.md LICENSE "$dir/"
           cp third_party/ymfm/LICENSE "$dir/licenses/ymfm.txt"
           cp third_party/z80/LICENSE "$dir/licenses/z80.txt"
           cp build/_deps/sfml-src/license.md "$dir/licenses/SFML.txt"
@@ -105,7 +105,7 @@ jobs:
           cp third_party/z80/LICENSE "$stage/licenses/z80.txt"
           cp build/_deps/sfml-src/license.md "$stage/licenses/SFML.txt"
           cp "$stage"/licenses/* "$app/Contents/Resources/licenses/"
-          cp README.md "$stage/"
+          cp README.md LICENSE "$stage/"
           lipo -archs "$app/Contents/MacOS/scooby"
           dmg="scooby-${{ matrix.name }}.dmg"
 
