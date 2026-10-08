@@ -5,8 +5,10 @@
 #include "game/autoplay.h"
 #include "game/game.h"
 #include "game/interrupts.h"
+#include "game/savestate.h"
 #include "game/script.h"
 #include "game/sound.h"
+#include "saveui.h"
 #include <SFML/Audio.hpp>
 #include <SFML/Graphics.hpp>
 #include <algorithm>
@@ -34,6 +36,8 @@ std::unique_ptr<AudioMachine> g_audio;
 // (0x1F6E0A-0x1F6F60).
 void connectSound() {
     g_audio = std::make_unique<AudioMachine>(M.rom);
+    M.audioSave = [](std::vector<u8>& out) { g_audio->saveState(out); };
+    M.audioLoad = [](const u8* data, size_t size) { return g_audio->loadState(data, size); };
     snd::sink = [](const snd::Command& c) {
         AudioMachine& a = *g_audio;
         switch (c.kind) {
@@ -81,6 +85,8 @@ struct Options {
     bool fullscreen = false;
     bool mute = false;
     bool solve = false;         // headless: search for a way to the episode's ending
+    std::vector<std::pair<long, std::string>> saveAt, loadAt;   // headless: frame -> saved game file
+    std::string dialogTest;     // testing aid: draw the save dialog's screens into this folder
     std::string replay;         // headless: run this list of actions first (or only, without --solve)
     std::string wav;            // headless: write the rendered sound here
     std::string scriptTrace;    // headless: log every executed script instruction here
@@ -98,6 +104,13 @@ Options parse(int argc, char** argv) {
         else if (a == "--fullscreen") o.fullscreen = true;
         else if (a == "--mute") o.mute = true;
         else if (a == "--solve") { o.solve = true; o.headless = true; if (o.frames < 0) o.frames = 2000000000L; }
+        else if (a == "--save-at" || a == "--load-at") {   // FRAME:FILE, for testing saved games
+            const std::string v = next();
+            const size_t c = v.find(':');
+            (a == "--save-at" ? o.saveAt : o.loadAt).push_back({std::atol(v.substr(0, c).c_str()), v.substr(c + 1)});
+            o.headless = true;
+        }
+        else if (a == "--dialog-test") { o.dialogTest = next(); o.headless = true; }
         else if (a == "--replay") { o.replay = next(); o.headless = true; if (o.frames < 0) o.frames = 2000000000L; }
         else if (a == "--room") M.debugRoom = std::atoi(next().c_str());
         else if (a == "--poke") {   // testing aid: ADDR=VALUE in hex, applied with --room
@@ -212,7 +225,22 @@ int runHeadless(const Options& o) {
             if (autoplay::done) { std::fprintf(stderr, "solver: %s\n", autoplay::result.c_str()); break; }
             continue;
         }
-        stepFrame(frame);
+        for (const auto& sv : o.saveAt) if (n == sv.first) M.snapshotRequested = true;
+        for (const auto& ld : o.loadAt)
+            if (n == ld.first) {
+                std::ifstream f(ld.second, std::ios::binary);
+                std::vector<u8> data((std::istreambuf_iterator<char>(f)), {});
+                savestate::Info info;
+                if (savestate::read(data, info)) { M.loadEpisode = info.episode; M.loadData = std::move(data); }
+                else std::fprintf(stderr, "cannot load %s\n", ld.second.c_str());
+            }
+        {
+            const u32 before = M.snapshotSerial;
+            stepFrame(frame);
+            if (M.snapshotSerial != before)
+                for (const auto& sv : o.saveAt)
+                    if (sv.first <= n && !sv.second.empty()) { std::ofstream(sv.second, std::ios::binary).write(reinterpret_cast<const char*>(M.snapshot.data()), std::streamsize(M.snapshot.size())); std::fprintf(stderr, "saved %s at frame %ld\n", sv.second.c_str(), n); }
+        }
         if (!o.wav.empty()) {
             const size_t at = pcm.size();
             pcm.resize(at + size_t(perFrame) * 2);
@@ -288,6 +316,46 @@ void openWindow(sf::RenderWindow& window, bool fullscreen, int scale) {
     window.setMouseCursorVisible(false);   // the game draws its own pointer
 }
 
+// Testing aid: draws each screen of the save dialog to a PNG, driving it
+// with the same events the window would send.
+int runDialogTest(const std::string& dir) {
+    sf::RenderTexture rt({1280u, 960u});
+    const sf::FloatRect pic({0.f, 0.f}, {1280.f, 960.f});
+    SaveDialog d;
+    int shot = 0;
+    auto snap = [&](const char* name) {
+        rt.clear(sf::Color(30, 90, 60));
+        d.draw(rt, pic);
+        rt.display();
+        char file[64];
+        std::snprintf(file, sizeof file, "/%d-%s.png", ++shot, name);
+        return rt.getTexture().copyToImage().saveToFile(dir + file);
+    };
+    auto clickAt = [&](int gx, int gy) {   // grid coordinates, 320x240
+        d.onEvent(sf::Event::MouseButtonPressed{sf::Mouse::Button::Left, {gx * 4, gy * 4}}, pic);
+    };
+    auto type = [&](const char* text) { for (const char* c = text; *c; c++) d.onEvent(sf::Event::TextEntered{char32_t(*c)}, pic); };
+    std::vector<u8> fake(8 + 32 + 8 + 0x20000 + 128 + 80 + 32, 0);
+    std::memcpy(fake.data(), "SCBYSAV1", 8);
+    d.open(fake);
+    bool ok = snap("main");
+    clickAt(258, 65);                       // Save
+    type("The quick brown fox, 0123");
+    ok &= snap("save-typing");
+    d.onEvent(sf::Event::KeyPressed{sf::Keyboard::Key::Enter, sf::Keyboard::Scancode::Enter, false, false, false, false}, pic);
+    std::fprintf(stderr, "after save: open=%d result=%d\n", d.isOpen(), int(d.takeResult()));
+    d.open(fake);
+    clickAt(258, 89);                       // Load
+    clickAt(100, 60);                       // first slot
+    ok &= snap("load-picked");
+    d.onEvent(sf::Event::KeyPressed{sf::Keyboard::Key::Escape, sf::Keyboard::Scancode::Escape, false, false, false, false}, pic);
+    clickAt(258, 137);                      // Quit
+    ok &= snap("quit");
+    d.open({});
+    ok &= snap("title-screen");
+    return ok ? 0 : 1;
+}
+
 int runWindowed(const Options& o) {
     sf::RenderWindow window;
     bool fullscreen = o.fullscreen;
@@ -301,10 +369,32 @@ int runWindowed(const Options& o) {
     std::vector<u16> frame;
     std::vector<std::uint8_t> rgba(size_t(Vdp::kMaxWidth) * Vdp::kHeight * 4);
 
+    // Saved games: F5 opens the dialog. In the game it first asks the game
+    // thread for a snapshot, which only arrives while the player has control.
+    SaveDialog dialog;
+    int snapshotWait = 0;         // frames left to wait for that snapshot
+    u32 snapshotSeen = 0;
+    bool holdInput = false;       // after the dialog closes, until every button is let go
+    int lastWidth = 256;
+
     while (window.isOpen()) {
         bool toggle = false;
+        const sf::FloatRect eventPic = pictureRect(window.getSize());
         while (const std::optional event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) window.close();
+            if (dialog.isOpen()) {   // the dialog takes all input while it is up
+                dialog.onEvent(*event, eventPic);
+                continue;
+            }
+            if (const auto* k5 = event->getIf<sf::Event::KeyPressed>(); k5 && k5->code == sf::Keyboard::Key::F5 && snapshotWait == 0) {
+                if (M.rd32(VBlankHandler) == irq::VblTitle) {
+                    dialog.open({});              // menus: loading only
+                } else {
+                    M.snapshotRequested = true;
+                    snapshotSeen = M.snapshotSerial;
+                    snapshotWait = 30;
+                }
+            }
             if (const auto* wheel = event->getIf<sf::Event::MouseWheelScrolled>()) M.mouseWheel += wheel->delta > 0 ? 1 : wheel->delta < 0 ? -1 : 0;
             // Releases are not delivered while the window is in the background.
             if (event->is<sf::Event::FocusLost>()) std::fill(std::begin(g_keyDown), std::end(g_keyDown), false);
@@ -320,6 +410,20 @@ int runWindowed(const Options& o) {
             fullscreen = !fullscreen;
             openWindow(window, fullscreen, o.scale);
             std::fill(std::begin(g_keyDown), std::end(g_keyDown), false);   // the old window's releases never arrive
+        }
+        if (!window.isOpen()) break;
+
+        switch (dialog.takeResult()) {
+            case SaveDialog::Result::Quit: window.close(); break;
+            case SaveDialog::Result::Load:
+                M.loadEpisode = dialog.loadEpisode;
+                M.loadData = std::move(dialog.loadData);
+                [[fallthrough]];
+            case SaveDialog::Result::Resume:
+                holdInput = true;
+                std::fill(std::begin(g_keyDown), std::end(g_keyDown), false);
+                break;
+            case SaveDialog::Result::None: break;
         }
         if (!window.isOpen()) break;
 
@@ -357,7 +461,26 @@ int runWindowed(const Options& o) {
                 M.mouseLeft = M.mouseRight = M.mouseMiddle = false;
             }
             static bool shown = false;
-            if (title != shown) { shown = title; window.setMouseCursorVisible(title); }
+            const bool want = title || dialog.isOpen();
+            if (want != shown) { shown = want; window.setMouseCursorVisible(want); }
+        }
+        // The click or key that closed the dialog must not reach the game.
+        if (holdInput) {
+            const bool any = M.pad1 || M.mouseLeft || M.mouseRight || M.mouseMiddle ||
+                             sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) || sf::Mouse::isButtonPressed(sf::Mouse::Button::Right);
+            M.pad1 = 0;
+            M.mouseLeft = M.mouseRight = M.mouseMiddle = false;
+            if (!any) holdInput = false;
+        }
+        if (dialog.isOpen()) {   // the game stands still under the dialog
+            sf::Sprite still(texture, sf::IntRect({0, 0}, {lastWidth, Vdp::kHeight}));
+            still.setPosition(pic.position);
+            still.setScale({pic.size.x / float(lastWidth), pic.size.y / float(Vdp::kHeight)});
+            window.clear(sf::Color::Black);
+            window.draw(still);
+            dialog.draw(window, pic);
+            window.display();
+            continue;
         }
         {
             static u8 lastPad = 0;
@@ -366,8 +489,13 @@ int runWindowed(const Options& o) {
         }
         stepFrame(frame);
         M.skipRequested = false;
+        if (snapshotWait > 0) {
+            if (M.snapshotSerial != snapshotSeen) { snapshotWait = 0; dialog.open(M.snapshot); }
+            else if (--snapshotWait == 0) M.snapshotRequested = false;   // a cutscene is running: no saving now
+        }
 
         const int w = M.vdp.width();
+        lastWidth = w;
         for (size_t i = 0; i < frame.size(); i++) {
             const u32 c = Vdp::toRgba(frame[i]);
             std::memcpy(&rgba[i * 4], &c, 4);
@@ -498,6 +626,7 @@ std::string chooseRom() {
 
 int main(int argc, char** argv) {
     Options o = parse(argc, argv);
+    if (!o.dialogTest.empty()) return runDialogTest(o.dialogTest);
     if (o.rom.empty()) {
         // No ROM named: look beside the program, in the folder it was started
         // from, and in a `rom` folder in either (or one level up, which is

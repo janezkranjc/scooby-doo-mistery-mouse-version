@@ -61,7 +61,7 @@ target_include_directories(engine PUBLIC src)
 target_link_libraries(engine PUBLIC soundcores)
 target_compile_options(engine PRIVATE ${WARN_FLAGS})
 
-add_executable(scooby src/main.cpp)
+add_executable(scooby src/main.cpp src/saveui.cpp)
 target_link_libraries(scooby PRIVATE engine SFML::Graphics SFML::Window SFML::Audio SFML::System)
 target_compile_options(scooby PRIVATE ${WARN_FLAGS})
 

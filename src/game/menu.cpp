@@ -41,6 +41,11 @@ MenuMouse pollMouse() {
     return m;
 }
 
+// Addition: a saved game picked in the F5 dialog while a menu is up. The
+// menus unwind to the top level, which hands over to the game.
+bool loadWaiting() { return !M.loadData.empty(); }
+constexpr u16 kLoadPicked = 0xFFFF;
+
 // Which option line of a menu list is at this point, or -1. Lines are 24
 // pixels apart, the first one starting at y 88.
 int optionAt(const MenuMouse& m, u16 count) {
@@ -110,6 +115,7 @@ u16 selectOption(u16 count) {
             }
             if (pressed(0) && BTST(0xFF0010, 0) && y != 0) y = u16(y - 0x18);
             if (pressed(1) && BTST(0xFF0010, 1) && y != maxY) y = u16(y + 0x18);
+            if (loadWaiting()) return kLoadPicked;
             // Mouse: pointing at a line moves the cursor to it, a click picks it.
             const MenuMouse mouse = pollMouse();
             const int over = optionAt(mouse, count);
@@ -266,6 +272,7 @@ bool passwordScreen() {
             if (tapped(2)) col = (col - 1) & 7;
             // Mouse: click a letter or a command to use it, click in the
             // password text to move the caret there, right click to go back.
+            if (loadWaiting()) return false;
             const MenuMouse mouse = pollMouse();
             bool act = false;
             if (mouse.click) {
@@ -369,7 +376,7 @@ void soundTestScreen() {
                 if (shown != 0xFFFF) snd::startSequence(R8(kIds + shown));
             }
             if (tapped(6) || mouse.middle) snd::stopAll();
-            if (mouse.back || (pressed(5) && (BTST(0xFF0010, 5) || BTST(PadEdge, 5)))) {
+            if (loadWaiting() || mouse.back || (pressed(5) && (BTST(0xFF0010, 5) || BTST(PadEdge, 5)))) {
                 waitMenuTimer();
                 uploadLogo();
                 BCLR(TextAttrBase, 7);
@@ -406,7 +413,7 @@ bool episodeMenu(u16 episode) {
     resetEpisodeFlags();
     const u16 sel = submenu(episode ? 0x18B3C : 0x18A56, 3);
     if (sel == 0) return true;
-    if (sel == 2) return false;
+    if (sel == 2 || sel == kLoadPicked) return false;
     return passwordScreen();
 }
 
@@ -596,7 +603,7 @@ void titleMenu() {
         }
         for (;;) {
             ll::waitVBlank();
-            if ((R8(PadState) & 0xF0) != 0xF0 || pollMouse().click) { skipped = true; break; }
+            if ((R8(PadState) & 0xF0) != 0xF0 || pollMouse().click || loadWaiting()) { skipped = true; break; }
             if (RS16(kMenuTimer) < 0) break;
         }
         if (skipped) break;
@@ -626,6 +633,14 @@ void titleMenu() {
             ll::drawString(next, 1, 8);
         }
         const u16 sel = selectOption(count);
+        if (sel == kLoadPicked) {
+            if (!paused) {   // from the title screen: start in the save's episode
+                W16(EpisodeIndex, u16(M.loadEpisode));
+                resetEpisodeFlags();
+            }
+            leaveToGame();
+            return;
+        }
         if (!paused) {
             if (sel <= 1) {
                 if (episodeMenu(sel)) { leaveToGame(); return; }
@@ -635,7 +650,8 @@ void titleMenu() {
         } else {
             if (sel == 0) { leaveToGame(); return; }
             if (sel == 1) {   // 0x8F8A: quit, with a confirmation list
-                if (submenu(0x18F58, 4) != 0) {
+                const u16 quit = submenu(0x18F58, 4);
+                if (quit != 0 && quit != kLoadPicked) {
                     BCLR(EngineFlags, 6);
                     ll::fadeOut();
                     throw Restart{};

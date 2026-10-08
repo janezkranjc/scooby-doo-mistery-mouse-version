@@ -1,5 +1,6 @@
 #include "audio.h"
 #include <cstring>
+#include <type_traits>
 
 extern "C" {
 #include "z80.h"
@@ -50,6 +51,14 @@ public:
             else s += kVol[vol_[c]];
         s += (lfsr_ & 1) ? kVol[vol_[3]] : -kVol[vol_[3]];
         return s / 4;
+    }
+
+    // Saved games: every field as a 32-bit value, in a fixed order.
+    template <class F> void fields(F&& f) {
+        f(latch_); for (int& v : period_) f(v); for (int& v : count_) f(v); for (int& v : vol_) f(v);
+        f(noise_); f(lfsr_);
+        for (bool& b : out_) { int v = b; f(v); b = v != 0; }
+        { int v = noiseFlip_; f(v); noiseFlip_ = v != 0; }
     }
 
 private:
@@ -189,4 +198,96 @@ void AudioMachine::render(s16* out, int frames) {
         out[2 * i] = s16(l);
         out[2 * i + 1] = s16(r);
     }
+}
+
+namespace {
+
+// Saved state is a flat list of little-endian 32-bit values and byte blocks,
+// so a file written on one system loads on another.
+struct Out {
+    std::vector<u8>& b;
+    void u32v(u32 v) { for (int i = 0; i < 4; i++) b.push_back(u8(v >> (8 * i))); }
+    void bytes(const u8* p, size_t n) { b.insert(b.end(), p, p + n); }
+};
+struct In {
+    const u8* p; size_t left; bool ok = true;
+    u32 u32v() {
+        if (left < 4) { ok = false; return 0; }
+        const u32 v = u32(p[0]) | u32(p[1]) << 8 | u32(p[2]) << 16 | u32(p[3]) << 24;
+        p += 4; left -= 4;
+        return v;
+    }
+    void bytes(u8* dst, size_t n) {
+        if (left < n) { ok = false; return; }
+        std::memcpy(dst, p, n);
+        p += n; left -= n;
+    }
+};
+
+// The Z80's registers through one function for both directions.
+template <class F> void cpuFields(z80& c, F&& f) {
+    auto w = [&](auto& field) { u32 v = u32(field); f(v); field = static_cast<std::remove_reference_t<decltype(field)>>(v); };
+    auto bit = [&](bool cur, auto set) { u32 v = cur; f(v); set(v != 0); };
+    { u32 v = u32(c.cyc); f(v); c.cyc = v; }
+    w(c.pc); w(c.sp); w(c.ix); w(c.iy); w(c.mem_ptr);
+    w(c.a); w(c.b); w(c.c); w(c.d); w(c.e); w(c.h); w(c.l);
+    w(c.a_); w(c.b_); w(c.c_); w(c.d_); w(c.e_); w(c.h_); w(c.l_); w(c.f_);
+    w(c.i); w(c.r);
+    bit(c.sf, [&](bool v) { c.sf = v; }); bit(c.zf, [&](bool v) { c.zf = v; }); bit(c.yf, [&](bool v) { c.yf = v; });
+    bit(c.hf, [&](bool v) { c.hf = v; }); bit(c.xf, [&](bool v) { c.xf = v; }); bit(c.pf, [&](bool v) { c.pf = v; });
+    bit(c.nf, [&](bool v) { c.nf = v; }); bit(c.cf, [&](bool v) { c.cf = v; });
+    w(c.iff_delay); w(c.interrupt_mode); w(c.int_data);
+    bit(c.iff1, [&](bool v) { c.iff1 = v; }); bit(c.iff2, [&](bool v) { c.iff2 = v; }); bit(c.halted, [&](bool v) { c.halted = v; });
+    bit(c.int_pending, [&](bool v) { c.int_pending = v; }); bit(c.nmi_pending, [&](bool v) { c.nmi_pending = v; });
+}
+
+constexpr u32 kAudioMagic = 0x31445541;   // "AUD1"
+
+}  // namespace
+
+void AudioMachine::saveState(std::vector<u8>& out) {
+    std::lock_guard<std::mutex> g(lock_);
+    Out o{out};
+    o.u32v(kAudioMagic);
+    o.bytes(d->ram, sizeof d->ram);
+    cpuFields(d->cpu, [&](u32& v) { o.u32v(v); });
+    d->psg.fields([&](int& v) { o.u32v(u32(v)); });
+    o.u32v(d->bank); o.u32v(d->loaded); o.u32v(u32(d->frameSamples));
+    o.u32v(u32(d->timer[0])); o.u32v(u32(d->timer[1]));
+    std::vector<u8> chip;
+    ymfm::ymfm_saved_state st(chip, true);
+    d->fm.save_restore(st);
+    o.u32v(u32(chip.size()));
+    o.bytes(chip.data(), chip.size());
+}
+
+bool AudioMachine::loadState(const u8* data, size_t size) {
+    // Read into copies first, so bad data leaves the running state alone.
+    In in{data, size};
+    if (in.u32v() != kAudioMagic) return false;
+    std::vector<u8> ram(sizeof d->ram);
+    in.bytes(ram.data(), ram.size());
+    z80 cpu{};
+    cpuFields(cpu, [&](u32& v) { v = in.u32v(); });
+    Psg psg;
+    psg.fields([&](int& v) { v = int(in.u32v()); });
+    const u32 bank = in.u32v(), loaded = in.u32v(), frameSamples = in.u32v();
+    const s32 t0 = s32(in.u32v()), t1 = s32(in.u32v());
+    const u32 chipSize = in.u32v();
+    if (!in.ok || chipSize > in.left) return false;
+    std::vector<u8> chip(in.p, in.p + chipSize);
+
+    std::lock_guard<std::mutex> g(lock_);
+    std::memcpy(d->ram, ram.data(), ram.size());
+    cpu.userdata = d->cpu.userdata; cpu.read_byte = d->cpu.read_byte; cpu.write_byte = d->cpu.write_byte;
+    cpu.port_in = d->cpu.port_in; cpu.port_out = d->cpu.port_out;
+    d->cpu = cpu;
+    d->psg = psg;
+    d->bank = bank; d->loaded = loaded != 0; d->frameSamples = int(frameSamples);
+    d->timer[0] = t0; d->timer[1] = t1;
+    d->cycleDebt = 0;
+    ymfm::ymfm_saved_state st(chip, false);
+    d->fm.save_restore(st);
+    for (int c = 0; c < 2; c++) d->prevIn[c] = d->lp[c] = d->dcIn[c] = d->dcOut[c] = 0;
+    return true;
 }

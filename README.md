@@ -106,8 +106,28 @@ breaks.
 | Arrow keys | Walk directly, or move the pointer |
 | A / S / D, or Z / X / C | Pad buttons A / B / C |
 | Enter | Start: confirm in menus, pause in game |
+| F5 | Save and load: opens the saved games dialog (see below) |
 | F11, F or Alt+Enter | Toggle fullscreen at the desktop resolution |
 | Esc | Leave fullscreen, or quit when windowed |
+
+## Saving and loading
+
+Press F5 for the saved games dialog, laid out like the ones in the classic
+point-and-click adventures: nine numbered slots on the left, and Save, Load,
+Play and Quit on the right.
+
+- **Save:** pick a slot, type a name, then OK or Enter.
+- **Load:** pick a saved game, then OK or Enter, or double-click it.
+- **Play** or Esc goes back to the game. **Quit** asks first.
+
+You can save whenever you have control of the characters, not in the middle
+of a cutscene or conversation; F5 does nothing then. On the title screens F5
+opens the dialog for loading only. A saved game resumes exactly where it was
+made, music included, and the original passwords still work as well.
+
+Saved games are kept in `~/Library/Application Support/scooby/saves` on
+macOS, `%APPDATA%\scooby\saves` on Windows and `~/.local/share/scooby/saves`
+on Linux.
 
 ## Status
 

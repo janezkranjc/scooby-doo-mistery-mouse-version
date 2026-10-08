@@ -9,6 +9,7 @@
 #include "types.h"
 #include "vdp.h"
 #include <atomic>
+#include <functional>
 #include <semaphore>
 #include <string>
 #include <thread>
@@ -43,6 +44,15 @@ public:
     int walkObject = 0;             // script object under the pointer at the click, or 0
     int debugRoom = 0;              // testing aid: jump to this room once the episode has started
     std::vector<std::pair<u32, u8>> debugPokes;   // testing aid: bytes written before that jump
+    // Saved games (game/savestate.h). The host asks for a snapshot or hands
+    // over one to load; the game thread acts on both at its idle point.
+    bool snapshotRequested = false;
+    u32 snapshotSerial = 0;         // bumped each time `snapshot` is refreshed
+    std::vector<u8> snapshot;
+    std::vector<u8> loadData;       // non-empty: a saved game waiting to be loaded
+    int loadEpisode = 0;            // the episode that saved game belongs to
+    std::function<void(std::vector<u8>&)> audioSave;        // set by the host
+    std::function<bool(const u8*, size_t)> audioLoad;
     u32 frameCounter = 0;           // host frames presented
     u32 syncCounter = 0;            // frame waits performed by the game thread
 

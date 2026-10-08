@@ -3,6 +3,7 @@
 #include "actors.h"
 #include "addr.h"
 #include "autoplay.h"
+#include "savestate.h"
 #include "game.h"
 #include "interrupts.h"
 #include "lowlevel.h"
@@ -366,7 +367,7 @@ void adventureLoop() {
 // One run of the original loop, until something restarts it.
 static void adventurePass() {
     for (;;) {
-        if (!BTST(EngineFlags, 7)) autoplay::idle();
+        if (!BTST(EngineFlags, 7)) { savestate::atIdle(); autoplay::idle(); }
         actor::objectTicks();
         if (BTST(EngineFlags, 7)) {
             performAction();
@@ -387,6 +388,7 @@ static void adventurePass() {
             BCLR(EngineFlags, 6);
             ll::fadeOut();
             menu::titleMenu();
+            if (!M.loadData.empty()) continue;   // a saved game was picked: it is applied at the top of the loop
             room::enterAndShow();
             BCLR(EngineFlags, 7);
             ll::waitVBlank();
@@ -506,6 +508,11 @@ static void adventurePass() {
 
 void titleAndRun() {
     menu::titleMenu();
+    if (!M.loadData.empty()) {   // a saved game was picked on the title screen
+        snd::stopAll();
+        BCLR(EngineFlags, 7);
+        adventureLoop();         // applies it at once; the state replaces everything set up below
+    }
     snd::stopAll();
     resetGameState();
     loadEpisode();

@@ -268,3 +268,22 @@ taking the lights still happen in mid-air.
 
 Testing aids: `--room N` jumps to a room once the episode has started and
 `--poke ADDR=VAL` sets a byte first (story flags are at 0xFF2A00).
+
+## Saved games
+
+An addition; the original has passwords only. A save is work RAM, video RAM,
+colour and scroll RAM, the video registers and the whole sound side (Z80
+registers and RAM, FM chip, PSG), written by `src/game/savestate.cpp` and
+`AudioMachine::saveState`.
+
+The game logic runs on its own thread with a live call stack that cannot be
+saved. States are therefore taken and applied only at the adventure loop's
+idle point (`savestate::atIdle`), where the stack is always the same. That is
+why saving is refused during cutscenes. A game picked on a title screen
+makes the menus unwind (`loadWaiting` in `menu.cpp`) and the state is applied
+on the first pass of the adventure loop, replacing everything.
+
+The F5 dialog is drawn by the host over the frozen picture
+(`src/saveui.cpp`) with a small built-in pixel font (`src/font5x7.h`).
+`--dialog-test DIR` renders its screens to PNG files, and `--save-at
+FRAME:FILE` and `--load-at FRAME:FILE` exercise saving and loading headless.

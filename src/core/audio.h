@@ -23,6 +23,11 @@ public:
     // Renders interleaved stereo frames. Safe to call from an audio thread.
     void render(s16* out, int frames);
 
+    // Whole state of the sound side, for saved games. `loadState` returns
+    // false and changes nothing if the data is not a state this build wrote.
+    void saveState(std::vector<u8>& out);
+    bool loadState(const u8* data, size_t size);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> d;
