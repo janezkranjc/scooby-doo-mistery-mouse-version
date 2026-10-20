@@ -73,7 +73,7 @@ You can also name the file yourself:
 On Windows that is `build\scooby.exe "C:\path\to\rom.md"`, or drag the ROM
 file onto `scooby.exe`.
 
-Options: `--fullscreen` starts in fullscreen, `--scale N` sets the window
+Options: `--crt off|scanlines|crt` picks the filter, `--fullscreen` starts in fullscreen, `--scale N` sets the window
 size, `--mute` turns sound off. The picture is always shown 4:3 and centred,
 with black bars where the display is wider.
 
@@ -107,6 +107,7 @@ breaks.
 | A / S / D, or Z / X / C | Pad buttons A / B / C |
 | Enter | Start: confirm in menus, pause in game |
 | F5 | Save and load: opens the saved games dialog (see below) |
+| F9 | CRT filter: off, scanlines, or a curved CRT screen. The choice is remembered |
 | F11, F or Alt+Enter | Toggle fullscreen at the desktop resolution |
 | Esc | Leave fullscreen, or quit when windowed |
 
@@ -158,6 +159,9 @@ connected with it, all of which belong to their owners. No part of the game
 is included here, and you need your own legally obtained ROM to use the
 program. This project is not affiliated with or endorsed by the game's
 publishers or rights holders.
+
+The CRT filter is based on Timothy Lottes' CRT shader, which he released
+into the public domain.
 
 The libraries built into the program keep their own licences: SFML (zlib),
 ymfm (BSD-3-Clause) and the Z80 core (MIT). Their texts are in

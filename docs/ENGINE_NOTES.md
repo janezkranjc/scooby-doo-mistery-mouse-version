@@ -287,3 +287,20 @@ The F5 dialog is drawn by the host over the frozen picture
 (`src/saveui.cpp`) with a small built-in pixel font (`src/font5x7.h`).
 `--dialog-test DIR` renders its screens to PNG files, and `--save-at
 FRAME:FILE` and `--load-at FRAME:FILE` exercise saving and loading headless.
+
+## CRT filter
+
+An addition. `src/crt.cpp` is a single-pass GLSL 1.20 fragment shader: a
+port of Timothy Lottes' public-domain CRT shader (as found in libretro's
+`glsl-shaders/crt/shaders/crt-lottes.glsl`) to SFML. It reads the game
+texture with nearest sampling, rebuilds each scanline with Gaussian
+weights, adds a little bloom, bends the picture for the curved glass and
+multiplies by a phosphor mask laid over window pixels. Two presets:
+"scanlines" (flat, no mask) and "CRT" (curvature and an aperture grille).
+
+It was chosen over the other common shaders because it is public domain, so
+it can sit in an MIT project, and needs one pass, which `sf::Shader` handles
+directly. crt-royale is far heavier and multi-pass; crt-geom and crt-pi are
+GPL. Without shader support the filter stays off. `--crt-test DIR` renders
+the last headless frame through each setting.
+

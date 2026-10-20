@@ -26,6 +26,8 @@ public:
     int loadEpisode = 0;
 
     static std::string folder();   // where saved games are kept
+    // A one-line note in the top-left corner of the picture, in the dialog's font.
+    static void drawNote(sf::RenderTarget& target, const sf::FloatRect& picture, const std::string& text);
 
 private:
     enum class Mode { Main, Save, Load, ConfirmQuit };

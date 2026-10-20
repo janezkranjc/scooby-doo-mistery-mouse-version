@@ -8,6 +8,7 @@
 #include "game/savestate.h"
 #include "game/script.h"
 #include "game/sound.h"
+#include "crt.h"
 #include "saveui.h"
 #include <SFML/Audio.hpp>
 #include <SFML/Graphics.hpp>
@@ -86,6 +87,8 @@ struct Options {
     bool mute = false;
     bool solve = false;         // headless: search for a way to the episode's ending
     std::vector<std::pair<long, std::string>> saveAt, loadAt;   // headless: frame -> saved game file
+    std::string crt;            // --crt off|scanlines|crt; empty: the saved setting
+    std::string crtTest;        // testing aid: render each filter setting into this folder
     std::string dialogTest;     // testing aid: draw the save dialog's screens into this folder
     std::string replay;         // headless: run this list of actions first (or only, without --solve)
     std::string wav;            // headless: write the rendered sound here
@@ -110,6 +113,8 @@ Options parse(int argc, char** argv) {
             (a == "--save-at" ? o.saveAt : o.loadAt).push_back({std::atol(v.substr(0, c).c_str()), v.substr(c + 1)});
             o.headless = true;
         }
+        else if (a == "--crt") o.crt = next();
+        else if (a == "--crt-test") { o.crtTest = next(); o.headless = true; if (o.frames < 0) o.frames = 2400; }
         else if (a == "--dialog-test") { o.dialogTest = next(); o.headless = true; }
         else if (a == "--replay") { o.replay = next(); o.headless = true; if (o.frames < 0) o.frames = 2000000000L; }
         else if (a == "--room") M.debugRoom = std::atoi(next().c_str());
@@ -257,6 +262,25 @@ int runHeadless(const Options& o) {
         u32le(rate); u32le(rate * 4); u16le(4); u16le(16); f.write("data", 4); u32le(bytes);
         f.write(reinterpret_cast<const char*>(pcm.data()), bytes);
     }
+    if (!o.crtTest.empty()) {   // the last frame through each filter setting, at 1280x960
+        std::vector<std::uint8_t> rgba(size_t(Vdp::kMaxWidth) * Vdp::kHeight * 4, 0);
+        for (size_t i = 0; i < frame.size(); i++) { const u32 c = Vdp::toRgba(frame[i]); std::memcpy(&rgba[i * 4], &c, 4); }
+        sf::Texture tex(sf::Vector2u{Vdp::kMaxWidth, Vdp::kHeight});
+        tex.update(rgba.data());
+        const int w = M.vdp.width();
+        CrtFilter crt;
+        if (!crt.init()) std::fprintf(stderr, "no shader support\n");
+        sf::RenderTexture rt({1280u, 960u});
+        for (CrtFilter::Mode m : {CrtFilter::Mode::Off, CrtFilter::Mode::Scanlines, CrtFilter::Mode::Crt}) {
+            crt.setMode(m);
+            sf::Sprite sp(tex, sf::IntRect({0, 0}, {w, Vdp::kHeight}));
+            sp.setScale({1280.f / float(w), 960.f / float(Vdp::kHeight)});
+            rt.clear(sf::Color::Black);
+            rt.draw(sp, crt.states(tex, w));
+            rt.display();
+            if (!rt.getTexture().copyToImage().saveToFile(o.crtTest + "/" + CrtFilter::name(m) + ".png")) std::fprintf(stderr, "cannot write\n");
+        }
+    }
     M.shutdown();
     if (trace) std::fclose(trace);
     g_audio.reset();
@@ -356,6 +380,32 @@ int runDialogTest(const std::string& dir) {
     return ok ? 0 : 1;
 }
 
+// The filter setting is remembered next to the saved games.
+std::filesystem::path settingsFile() { return std::filesystem::path(SaveDialog::folder()).parent_path() / "settings.txt"; }
+
+std::string readSetting(const std::string& key) {
+    std::ifstream f(settingsFile());
+    std::string line;
+    while (std::getline(f, line))
+        if (line.rfind(key + "=", 0) == 0) return line.substr(key.size() + 1);
+    return "";
+}
+
+void writeSetting(const std::string& key, const std::string& value) {
+    std::vector<std::string> lines;
+    {
+        std::ifstream f(settingsFile());
+        std::string line;
+        while (std::getline(f, line))
+            if (line.rfind(key + "=", 0) != 0 && !line.empty()) lines.push_back(line);
+    }
+    lines.push_back(key + "=" + value);
+    std::error_code ec;
+    std::filesystem::create_directories(settingsFile().parent_path(), ec);
+    std::ofstream f(settingsFile(), std::ios::trunc);
+    for (const auto& l : lines) f << l << "\n";
+}
+
 int runWindowed(const Options& o) {
     sf::RenderWindow window;
     bool fullscreen = o.fullscreen;
@@ -366,6 +416,16 @@ int runWindowed(const Options& o) {
 
     sf::Texture texture(sf::Vector2u{Vdp::kMaxWidth, Vdp::kHeight});
     texture.setSmooth(false);
+
+    CrtFilter crt;
+    if (crt.init()) {
+        const std::string want = o.crt.empty() ? readSetting("filter") : o.crt;
+        if (const auto m = CrtFilter::parse(want)) crt.setMode(*m);
+    } else if (!o.crt.empty() && o.crt != "off") {
+        std::fprintf(stderr, "The CRT filter is not available: this graphics driver has no shader support.\n");
+    }
+    sf::Clock osdClock;           // a short note in the corner after F9
+    std::string osd;
     std::vector<u16> frame;
     std::vector<std::uint8_t> rgba(size_t(Vdp::kMaxWidth) * Vdp::kHeight * 4);
 
@@ -404,6 +464,16 @@ int runWindowed(const Options& o) {
                 using K = sf::Keyboard::Key;
                 if (k->code == K::Escape) { if (fullscreen) toggle = true; else window.close(); }
                 if (k->code == K::F11 || k->code == K::F || (k->code == K::Enter && k->alt)) toggle = true;
+                if (k->code == K::F9) {
+                    if (crt.available()) {
+                        crt.next();
+                        writeSetting("filter", CrtFilter::name(crt.mode()));
+                        osd = std::string("Filter: ") + (crt.mode() == CrtFilter::Mode::Off ? "off" : crt.mode() == CrtFilter::Mode::Scanlines ? "scanlines" : "CRT");
+                    } else {
+                        osd = "Filter: not supported on this system";
+                    }
+                    osdClock.restart();
+                }
             }
         }
         if (toggle) {
@@ -477,7 +547,7 @@ int runWindowed(const Options& o) {
             still.setPosition(pic.position);
             still.setScale({pic.size.x / float(lastWidth), pic.size.y / float(Vdp::kHeight)});
             window.clear(sf::Color::Black);
-            window.draw(still);
+            window.draw(still, crt.states(texture, lastWidth));
             dialog.draw(window, pic);
             window.display();
             continue;
@@ -505,7 +575,8 @@ int runWindowed(const Options& o) {
         sprite.setPosition(pic.position);
         sprite.setScale({pic.size.x / float(w), pic.size.y / float(Vdp::kHeight)});
         window.clear(sf::Color::Black);
-        window.draw(sprite);
+        window.draw(sprite, crt.states(texture, w));
+        if (!osd.empty() && osdClock.getElapsedTime().asSeconds() < 2.f) SaveDialog::drawNote(window, pic, osd);
         window.display();
         if (M.gameFinished()) window.close();
     }

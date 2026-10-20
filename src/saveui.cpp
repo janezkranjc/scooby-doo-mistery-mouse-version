@@ -297,3 +297,12 @@ void SaveDialog::draw(sf::RenderTarget& target, const sf::FloatRect& pic) {
     t.translate(pic.position).scale({pic.size.x / kW, pic.size.y / kH});
     target.draw(c.v, sf::RenderStates(t));
 }
+
+void SaveDialog::drawNote(sf::RenderTarget& target, const sf::FloatRect& pic, const std::string& text) {
+    Canvas c;
+    c.rect(4, 4, Canvas::width(text) + 8, 13, sf::Color(0, 0, 0, 180));
+    c.text(8, 7, text, kText);
+    sf::Transform t;
+    t.translate(pic.position).scale({pic.size.x / kW, pic.size.y / kH});
+    target.draw(c.v, sf::RenderStates(t));
+}
