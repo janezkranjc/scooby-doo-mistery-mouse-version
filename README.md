@@ -100,6 +100,7 @@ breaks.
 | Mouse move | Moves the pointer |
 | Left click | Pick a verb, or use the chosen verb on an object. With no verb chosen, walk to the clicked spot |
 | Right click | On a hotspot, run its suggested verb. Elsewhere, drop the chosen verb |
+| In conversations | Point at a line and click it to say it |
 | Click the panel's arrow button, middle click, or D | Swap the verb panel and the inventory |
 | Title menus | Point at an option and click it. On the password screen click letters and commands, click in the password to move the caret, right click to go back |
 | Sound test | Mouse wheel picks the tune, left click plays, middle click stops, right click leaves. On the pad: arrows pick, B plays, C stops, A leaves |

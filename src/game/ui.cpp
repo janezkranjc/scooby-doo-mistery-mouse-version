@@ -384,6 +384,23 @@ void dialogue() {
             u16 sel = 0;
             for (int i = 4; i >= 0; i--)
                 if (!used(i)) sel = u16(i);
+            // Addition for mouse play: pointing at a line highlights it and a
+            // click says it. Rows are 8 pixels tall from y 168, laid out as
+            // in the drawing loop above. Returns the line, or -1.
+            auto lineAtMouse = [&](u16& rowOut) {
+                if (!M.mouseEnabled || M.mouseX < 0 || M.mouseY < 0xA8) return -1;
+                const int at = (M.mouseY - 0xA8) / 8;
+                u16 top = 0;
+                for (int i = 0, left = RS16(0xFF080E); left > 0 && s16(top) < 5 && i < 5; i++, left--) {
+                    if (used(i)) continue;
+                    const u16 n = R16(0xFF081A + i * 2);
+                    if (at >= top && at < top + n) { rowOut = top; return i; }
+                    top = u16(top + n);
+                }
+                return -1;
+            };
+            int lastX = M.mouseX, lastY = M.mouseY;
+            bool strayClick = false;
             for (;;) {
                 BSET(EngineFlags, 0);
                 actor::update();
@@ -397,6 +414,15 @@ void dialogue() {
                 W16(0xFF06F0, cursorRow);
                 W16(0xFF06F2, u16((R16(0xFF081A + sel * 2) - 1) << 8));
                 M.yieldFrame();   // the bit set above is the frame wait
+                u16 mouseRow = 0;
+                const int over = lineAtMouse(mouseRow);
+                const bool mouseButton = M.mouseLeft || M.mouseRight;
+                if (over >= 0 && (mouseButton || M.mouseX != lastX || M.mouseY != lastY)) {
+                    sel = u16(over);
+                    cursorRow = mouseRow;
+                }
+                lastX = M.mouseX;
+                lastY = M.mouseY;
                 if (autoplay::active) {   // the solver picks by its plan for this conversation
                     std::vector<u16> open;
                     for (int i = 0; i < RS16(0xFF080E) && i < 5; i++)
@@ -404,7 +430,12 @@ void dialogue() {
                     if (!open.empty()) sel = open[size_t(autoplay::chooseLine(int(open.size())))];
                     break;
                 }
-                if (!BTST(PadState, 4) || !BTST(PadState, 6)) break;
+                // A click beside the lines says nothing.
+                const bool padDown = !BTST(PadState, 4) || !BTST(PadState, 6);
+                if (mouseButton && over < 0) strayClick = true;
+                else if (!mouseButton && !padDown) strayClick = false;
+                if (strayClick) continue;
+                if (padDown) break;
             }
             W16(0xFF06EE, 0xFFFF);
             BSET(0xFF0874, sel & 7);
