@@ -332,6 +332,98 @@ bool passwordScreen() {
     }
 }
 
+// 0x88D8 and 0x8AB6: a list of up to sixteen names a page, with a bar on the
+// current one. Up and down move the bar, A and C turn the page, B picks.
+// `last` is the highest index and `name` gives the text of an index. With a
+// mouse, pointing moves the bar, a click picks and the wheel turns the page.
+template <class Name>
+u16 pickFromList(u16 start, u16 last, Name name) {
+    u16 page = start >> 4, row = start & 15;
+    for (;;) {
+        const u16 first = u16(page << 4);
+        const u16 shown = u16(last - first > 15 ? 15 : last - first);
+        if (row > shown) row = shown;
+        ll::waitVBlank();
+        for (u16 i = 0; i <= shown; i++) ll::drawStringCleared(name(u16(first + i)), 1, u16(7 + i));
+        for (u16 r = u16(8 + shown); r < 0x17; r++) ll::drawStringCleared(0x2FFF4, 1, r);
+        bool turned = false;
+        while (!turned) {
+            ll::waitVBlank();
+            for (u16 k = 0; k < 8; k++) {   // the bar, eight sprites across
+                const u16 sp = u16(0xFC00 + k * 8);
+                ll::vramPoke(sp, u16(row * 8 + 0xB8));
+                ll::vramPoke(u16(sp + 2), k < 7 ? u16(0xC01 + k) : 0xC00);
+                ll::vramPoke(u16(sp + 4), 0x7D0);
+                ll::vramPoke(u16(sp + 6), u16(0x80 + k * 0x20));
+            }
+            const bool up = pressed(0) && BTST(PadPrev, 0), down = pressed(1) && BTST(PadPrev, 1);
+            const MenuMouse mouse = pollMouse();
+            const int line = mouse.y >= 56 ? (mouse.y - 56) / 8 : -1;
+            const bool onLine = M.mouseEnabled && line >= 0 && line <= shown;
+            if (onLine && (mouse.moved || mouse.click)) row = u16(line);
+            const bool lastPage = page == u16((last - 1) >> 4);
+            if (up) {
+                if (row) row--;
+                else if (page) { page--; row = 15; turned = true; }
+            } else if (down) {
+                if (row != shown) row++;
+                else if (!lastPage) { page++; row = 0; turned = true; }
+            }
+            if (!turned && ((pressed(6) && BTST(PadPrev, 6)) || mouse.wheel > 0) && page) { page--; row = 0; turned = true; }
+            if (!turned && ((pressed(5) && BTST(PadPrev, 5)) || mouse.wheel < 0) && !lastPage) { page++; row = 0; turned = true; }
+            if (!turned && ((pressed(4) && BTST(PadPrev, 4)) || (mouse.click && onLine))) return u16(first + row);
+        }
+    }
+}
+
+// 0x88D8's list: limbo, the player's inventory, then every room by name.
+u16 pickRoom(u16 start) {
+    const u32 hdr = R32(RoomHeaderPtr);
+    const u32 rooms = R32(hdr + 8);
+    const u16 count = u16((R32(hdr + 0x0C) - rooms) / 0x14);
+    return pickFromList(start, count, [&](u16 i) -> u32 {
+        if (i == 0) return 0x8A9C;
+        if (i == 1) return 0x8AA2;
+        return R32(hdr + 0x20) + R32(rooms + (i - 2u) * 0x14);
+    });
+}
+
+// 0x88A2: choose the room to go to on leaving the menu.
+void roomSelect() {
+    u16 room;
+    do {
+        ll::showPackedScreen(0x18DD0);
+        room = pickRoom(R16(0xFF000A));
+    } while (room <= 1);
+    W16(0xFF000A, room);
+    ll::dmaVram(kLogoSprites, 0xFC00, 0x34);
+}
+
+// 0x8C40: choose an object, then where it should be. "Player Inventory"
+// puts it in the inventory.
+void objectMover() {
+    ll::loadFont(0x0F, 0, R16(TextAttrBase));
+    ll::showPackedScreen(0x18E08);
+    const u32 hdr = R32(RoomHeaderPtr);
+    const u16 obj = pickFromList(0, R16(0xFF06F4), [&](u16 i) { return R32(hdr + 0x20) + R32(R32(hdr + 0x28) + i * 8u + 4); });
+    const u32 o = 0xFF1200 + obj * 0x1Au;
+    const u16 where = R16(o + 6), room = pickRoom(where);
+    if (room != where) {
+        if (where == 1) {          // out of the carried list
+            u32 p = 0xFF0A1E;
+            while (R16(p) != obj) p += 2;
+            do { W16(p, R16(p + 2)); p += 2; } while (RS16(p - 2) >= 0);
+        } else if (room == 1) {    // onto the end of it
+            u32 p = 0xFF0A1E;
+            while (RS16(p) >= 0) p += 2;
+            W16(p, obj);
+            W16(p + 2, 0xFFFF);
+        }
+        W16(o + 6, room);
+    }
+    ll::dmaVram(kLogoSprites, 0xFC00, 0x34);
+}
+
 // 0x940C: sound test. Up and down change the first digit of the number,
 // left and right the second, B plays, C stops, A leaves. The name of the
 // tune is shown under the number. Mouse additions: the wheel steps through
@@ -666,8 +758,8 @@ void titleMenu() {
                     throw Restart{};
                 }
             } else {
-                extern void debugMenu(u16 which);
-                debugMenu(sel);
+                if (sel == 2) roomSelect();
+                else objectMover();
             }
         }
     }

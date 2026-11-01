@@ -10,6 +10,3 @@ void titleFlashWork() {
 }
 }  // namespace irq
 
-namespace menu {
-void debugMenu(u16) {}       // 0x88A2 / 0x8C40, not yet ported
-}  // namespace menu

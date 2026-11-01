@@ -464,6 +464,11 @@ int runWindowed(const Options& o) {
                 using K = sf::Keyboard::Key;
                 if (k->code == K::Escape) { if (fullscreen) toggle = true; else window.close(); }
                 if (k->code == K::F11 || k->code == K::F || (k->code == K::Enter && k->alt)) toggle = true;
+                if (k->code == K::F10) {   // the extended pause menu, normally behind a button code on the title screen
+                    M.wr8(0xFF09ED, M.rd8(0xFF09ED) | 2);
+                    osd = "Cheats on: Enter opens the pause menu";
+                    osdClock.restart();
+                }
                 if (k->code == K::F9) {
                     if (crt.available()) {
                         crt.next();

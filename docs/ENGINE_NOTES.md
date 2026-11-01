@@ -151,7 +151,6 @@ Not ported:
 
 | Address | What |
 |---|---|
-| 0x88A2, 0x8C40 | Hidden debug menus (room select, object mover) |
 
 Known deviations from the original:
 
@@ -303,4 +302,18 @@ it can sit in an MIT project, and needs one pass, which `sf::Shader` handles
 directly. crt-royale is far heavier and multi-pass; crt-geom and crt-pi are
 GPL. Without shader support the filter stays off. `--crt-test DIR` renders
 the last headless frame through each setting.
+
+## Pacing
+
+The bulk routines (`lzssDecode`, `packbitsDecode`, VRAM copies and fills,
+`loadFont`) add up an estimate of their 68000 cost and give it back as frames
+(`ll::chargeCycles`), because the original's pauses between scenes and between
+lines of speech are that work. Constants are tuned against the reference
+emulator: black gaps and line spacing come out within a few frames.
+
+## Debug menus
+
+Room select (0x88A2) and the object mover (0x8C40) are ported in `menu.cpp`.
+The original unlocks them with a button sequence on the title screen (table at
+0x10118: A B A C A B Left Right A B Left); F10 sets the same bit.
 

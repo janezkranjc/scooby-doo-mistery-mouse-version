@@ -108,6 +108,7 @@ breaks.
 | A / S / D, or Z / X / C | Pad buttons A / B / C |
 | Enter | Start: confirm in menus, pause in game |
 | F5 | Save and load: opens the saved games dialog (see below) |
+| F10 | Cheats: adds the game's hidden room select and object mover to the pause menu (Enter). With the object mover you can put any item in your inventory |
 | F9 | CRT filter: off, scanlines, or a curved CRT screen. The choice is remembered |
 | F11, F or Alt+Enter | Toggle fullscreen at the desktop resolution |
 | Esc | Leave fullscreen, or quit when windowed |
@@ -139,7 +140,7 @@ verb panel, inventory, speech and dialogue trees, mouse pointer, and sound.
 Sound runs the cartridge's own driver program on a Z80 core with FM and PSG
 chip models (`third_party/`, MIT and BSD licences). `--mute` turns it off.
 
-Not done yet: the hidden debug menus, which are not needed to play. See `docs/` for details.
+See `docs/` for details.
 
 ## Layout
 
