@@ -349,10 +349,19 @@ void soundTestScreen() {
     W16(kMenuTimer, 4);
     ll::dmaVram(0xFF3000, 0xC000, 0x380);
     uploadLogo();
+    // Addition: a visible way out for someone using only the mouse.
+    constexpr u32 kHint = 0xFF2C00;
+    constexpr u16 kHintRow = 0x17;
+    const char* hint = "Click here to go back";
+    u16 hintLen = 0;
+    for (; hint[hintLen]; hintLen++) W8(kHint + hintLen, u8(hint[hintLen]));
+    W8(kHint + hintLen, 0);
+    ll::drawString(kHint, u16((0x20 - hintLen) >> 1), kHintRow);
     for (;;) {
         scaleLogo();
         for (;;) {
             const MenuMouse mouse = pollMouse();
+            const bool leave = mouse.click && mouse.y >= kHintRow * 8 - 4 && mouse.y < (kHintRow + 1) * 8 + 4;
             if (tapped(0)) hi++;
             if (tapped(1)) hi--;
             if (tapped(3)) lo++;
@@ -371,12 +380,12 @@ void soundTestScreen() {
             if (hi < 0) hi = 5;
             else if (hi > 5) hi = 0;
             if (hi == 5 && lo >= 7) lo = 6;
-            if (tapped(4) || mouse.click) {
+            if ((tapped(4) || mouse.click) && !leave) {
                 snd::stopAll();
                 if (shown != 0xFFFF) snd::startSequence(R8(kIds + shown));
             }
             if (tapped(6) || mouse.middle) snd::stopAll();
-            if (loadWaiting() || mouse.back || (pressed(5) && (BTST(0xFF0010, 5) || BTST(PadEdge, 5)))) {
+            if (loadWaiting() || leave || mouse.back || (pressed(5) && (BTST(0xFF0010, 5) || BTST(PadEdge, 5)))) {
                 waitMenuTimer();
                 uploadLogo();
                 BCLR(TextAttrBase, 7);

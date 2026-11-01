@@ -103,7 +103,7 @@ breaks.
 | In conversations | Point at a line and click it to say it |
 | Click the panel's arrow button, middle click, or D | Swap the verb panel and the inventory |
 | Title menus | Point at an option and click it. On the password screen click letters and commands, click in the password to move the caret, right click to go back |
-| Sound test | Mouse wheel picks the tune, left click plays, middle click stops, right click leaves. On the pad: arrows pick, B plays, C stops, A leaves |
+| Sound test | Mouse wheel picks the tune, left click plays, middle click stops. Click the line at the bottom, or right click, to leave. On the pad: arrows pick, B plays, C stops, A leaves |
 | Arrow keys | Walk directly, or move the pointer |
 | A / S / D, or Z / X / C | Pad buttons A / B / C |
 | Enter | Start: confirm in menus, pause in game |

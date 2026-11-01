@@ -300,6 +300,9 @@ void loadFont(u16 fg, u16 bg, u16 attrBase) {
         vramPoke(addr, w);
         addr = u16(addr + 2);
     }
+    // Recolouring every glyph nibble by nibble takes the 68000 some 13 frames,
+    // and a line of speech does it twice: that is the pause between lines.
+    chargeCycles(0x5F0 * 530);
 }
 
 // 0x96F4: decodes a full 32x28 map and puts it on plane A.
