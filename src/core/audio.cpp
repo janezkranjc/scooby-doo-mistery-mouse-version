@@ -104,12 +104,25 @@ struct AudioMachine::Impl : ymfm::ymfm_interface {
         if (a < 0x4000) return ram[a & 0x1FFF];
         if (a < 0x6000) return fm.read_status();
         if (a < 0x8000) return 0xFF;
+        // Reaching the cartridge through the bank window stalls the Z80 for
+        // about three cycles while it waits for the main bus. The driver
+        // times sample playback by counting cycles, so without this samples
+        // play too fast and too high.
+        cpu.cyc += 3;
         const u32 r = (bank << 15) | (a & 0x7FFF);
         return r < rom.size() ? rom[r] : 0xFF;
     }
     void write(u16 a, u8 v) {
         if (a < 0x4000) ram[a & 0x1FFF] = v;
-        else if (a < 0x6000) fm.write(a & 3, v);
+        else if (a < 0x6000) {
+            // The Z80 core stores the byte back after BIT n,(HL), which the
+            // real chip never does. The driver polls the FM status that way,
+            // so the stray write would replace the chip's address latch, the
+            // timer reset that follows would miss, and samples would run a
+            // third too fast. Drop it here; the core is a pinned submodule.
+            const bool bitTest = ram[u16(cpu.pc - 2) & 0x1FFF] == 0xCB && (ram[u16(cpu.pc - 1) & 0x1FFF] & 0xC7) == 0x46;
+            if (!bitTest) fm.write(a & 3, v);
+        }
         else if (a < 0x6100) bank = ((bank >> 1) | (u32(v & 1) << 8)) & 0x1FF;   // nine bits, shifted in
         else if (a == 0x7F11) psg.write(v);
     }
