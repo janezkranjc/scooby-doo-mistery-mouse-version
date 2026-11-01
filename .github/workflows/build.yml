@@ -22,7 +22,7 @@ jobs:
             os: ubuntu-24.04
             program: scooby
           - name: macos-universal
-            os: macos-14
+            os: macos-15
             program: scooby
           - name: windows-x86_64
             os: windows-2022
