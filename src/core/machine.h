@@ -56,6 +56,8 @@ public:
     u32 frameCounter = 0;           // host frames presented
     u32 syncCounter = 0;            // frame waits performed by the game thread
 
+    bool onGameThread() const { return std::this_thread::get_id() == thread_.get_id(); }
+
     // Loads and validates the cartridge image. Returns an error message or "".
     std::string loadRom(const std::string& path);
 

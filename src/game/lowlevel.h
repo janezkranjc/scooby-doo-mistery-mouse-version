@@ -9,6 +9,7 @@ struct SkipScreens {};             // thrown from a frame wait while `allowSkip`
 extern bool allowSkip;             // addition: lets a button press cut the boot screens short
 void waitVBlank();                 // 0x974C
 void waitFrames(u16 count);        // 0x9742: waits count+1 frames
+void chargeCycles(u32 cycles);     // time the original would have spent; given back as frames
 void idleFrame();                  // one frame of a busy-wait on interrupt-updated state
 
 // Video memory. Sources are bus addresses (ROM or RAM). Functions that the

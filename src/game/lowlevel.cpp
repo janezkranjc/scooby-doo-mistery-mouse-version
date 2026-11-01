@@ -8,7 +8,31 @@ namespace ll {
 // it. Here the wait hands the frame to the presentation loop instead.
 bool allowSkip = false;
 
+// The original spends real time decompressing and copying, with the screen
+// black between scenes, and the port does that work in no time at all. So
+// the bulk routines add up roughly what they cost a 7.67 MHz 68000 and give
+// that time back as frames, which keeps the pauses of the original. The frame
+// interrupt keeps running meanwhile, as it does there. A frame wait uses up
+// whatever is left over, because the original would have been waiting too.
+namespace {
+// Tuned so the gaps match the reference emulator: of the 127840 cycles in a
+// frame, the interrupt and the video chip leave the loaders about half.
+constexpr u32 kCyclesPerFrame = 62000;
+u32 cycleDebt = 0;
+}
+
+void chargeCycles(u32 cycles) {
+    if (!M.onGameThread()) return;   // the frame interrupt's own copies are paid for by the frame
+    cycleDebt += cycles;
+    while (cycleDebt >= kCyclesPerFrame) {
+        cycleDebt -= kCyclesPerFrame;
+        M.yieldFrame();
+        autoplay::checkAbort();
+    }
+}
+
 void waitVBlank() {
+    cycleDebt = 0;
     BSET(EngineFlags, 0);
     M.yieldFrame();
     autoplay::checkAbort();
@@ -20,7 +44,7 @@ void waitVBlank() {
 
 // The original has several loops that spin on a counter the frame interrupt
 // decrements. Each pass of such a loop is one call to this.
-void idleFrame() { M.yieldFrame(); autoplay::checkAbort(); }
+void idleFrame() { cycleDebt = 0; M.yieldFrame(); autoplay::checkAbort(); }
 
 // 0x9742: dbf loop, so `count` + 1 frames.
 void waitFrames(u16 count) {
@@ -30,6 +54,8 @@ void waitFrames(u16 count) {
 static inline u16 autoInc() { return M.vdp.reg[15]; }
 
 // 0x992C
+constexpr u32 kVramWordWrite = 24, kVramWordFill = 14, kDmaWord = 5;
+
 u32 vramWrite(u16 addr, u16 words, u32 src) {
     const u16 step = autoInc();
     for (u32 i = 0; i < words; i++) {
@@ -37,6 +63,7 @@ u32 vramWrite(u16 addr, u16 words, u32 src) {
         src += 2;
         addr = u16(addr + step);
     }
+    chargeCycles(words * kVramWordWrite);
     return src;
 }
 
@@ -53,6 +80,7 @@ u32 dmaVram(u32 src, u16 addr, u16 words) {
         src += 2;
         addr = u16(addr + step);
     }
+    chargeCycles(words * kDmaWord);
     return src;
 }
 
@@ -73,6 +101,7 @@ void vramFill(u16 addr, u16 words, u16 value) {
         M.vdp.vramPoke(addr, value);
         addr = u16(addr + step);
     }
+    chargeCycles(n * kVramWordFill);
 }
 
 // 0x9C1E
@@ -90,6 +119,9 @@ void setVdpReg(u16 reg, u16 value) { M.vdp.setReg(reg & 0x7F, u8(value)); }
 // position starts at 1. A flag bit of 1 is followed by an 8-bit literal. A
 // flag bit of 0 is followed by a 12-bit ring position (0 ends the stream) and
 // a 4-bit length code, copying code+2 bytes from that position.
+constexpr u32 kLzssLiteral = 170, kLzssMatch = 190, kLzssMatchByte = 50;
+constexpr u32 kPackLiteral = 26, kPackFill = 12, kPackControl = 70;
+
 void lzssDecode(u32 src, u32 ring, u32 dst) {
     u32 bitPos = 0;
     auto bits = [&](int n) {
@@ -100,8 +132,10 @@ void lzssDecode(u32 src, u32 ring, u32 dst) {
     };
     const u32 start = dst;
     u16 wpos = 1;
+    u32 cost = 0;
     for (;;) {
         if (bits(1)) {
+            cost += kLzssLiteral;
             const u8 b = u8(bits(8));
             W8(dst++, b);
             W8(ring + wpos, b);
@@ -110,7 +144,9 @@ void lzssDecode(u32 src, u32 ring, u32 dst) {
             u16 pos = u16(bits(12));
             if (pos == 0) break;
             const u16 last = u16(pos + bits(4) + 1);
+            cost += kLzssMatch;
             for (; pos <= last; pos++) {
+                cost += kLzssMatchByte;
                 const u8 b = R8(ring + (pos & 0xFFF));
                 W8(dst++, b);
                 W8(ring + wpos, b);
@@ -119,6 +155,7 @@ void lzssDecode(u32 src, u32 ring, u32 dst) {
         }
     }
     W32(ring, dst - start);
+    chargeCycles(cost);
 }
 
 // 0x9C64. PackBits-style run-length coding with a 32-bit size header of which
@@ -129,9 +166,12 @@ void lzssDecode(u32 src, u32 ring, u32 dst) {
 void packbitsDecode(u32 src, u32 dst) {
     const u32 end = dst + s16(R16(src + 2));
     src += 4;
+    u32 cost = 0;
     while (dst != end) {
         const u8 n = R8(src++);
+        cost += kPackControl;
         if (!(n & 0x80)) {
+            cost += (n + 1u) * kPackLiteral;
             for (int i = 0; i <= n; i++) W8(dst++, R8(src++));
         } else {
             const u8 value = R8(src++);
@@ -141,6 +181,7 @@ void packbitsDecode(u32 src, u32 dst) {
                 count = u16(count - 1);
             }
             const u32 fill = value * 0x01010101u;
+            cost += count * kPackFill;
             const u16 back = (count & 3) ^ 3;
             for (u32 i = 0; i <= u32(count >> 2); i++) {
                 W32(dst, fill);
@@ -149,6 +190,7 @@ void packbitsDecode(u32 src, u32 dst) {
             dst -= back;
         }
     }
+    chargeCycles(cost);
 }
 
 // 0x9DE0. Reads the live palette back, then darkens every component by one
