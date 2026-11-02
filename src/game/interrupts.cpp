@@ -97,6 +97,7 @@ void vblank() {
 // dialogue text is then restored.
 void beforeLine(int y) {
     if (y != 168) return;
+    if (M.irqMasked) return;   // masked like the frame interrupt (ll::IrqMask)
     if (!(M.vdp.reg[0] & 0x10)) return;
     if (R32(HBlankHandler) != HblSplit) return;
     M.vdp.vsram[0] = 0;
