@@ -338,13 +338,16 @@ void setTarget(u16 hit) {
 
 // Direct control: standing on an object's rectangle runs its walk-on script
 // once (0x12CC-0x13AC). Returns true if a script was run.
-bool walkOnTrigger() {
+// `clicked` (an addition): the object a click aimed into, run even if the
+// walk there ended short of its rectangle.
+bool walkOnTrigger(u16 clicked = 0) {
     const s16 col = s16(R16(0xFF04DC) >> 3), row = s16(R16(0xFF04F4) >> 3);
     u16 hit = 0;
     u32 o = 0xFF1200;
     for (u16 n = 0; s16(n) <= RS16(0xFF06F4); n++, o += 0x1A)
         if (R16(o + 6) == R16(0xFF06AC) && !BTST(o + 0x18, 1) && R16(o + 2) != 0 && inRect(hotspotRect(R16(o + 2)), col, row))
             hit = u16(n + 3);
+    if (!hit) hit = clicked;
     W16(0xFF06AE, hit);
     if (!hit) return false;
     if (hit != R16(0xFF06B4)) BCLR(0xFF0AC9, 7);
@@ -427,10 +430,12 @@ static void adventurePass() {
 
         if (M.walkRequest) {
             M.walkRequest = false;
-            actor::clickWalk(M.walkX, M.walkY, M.walkObject);
+            const bool aimed = actor::clickWalk(M.walkX, M.walkY, M.walkObject);
             // Arriving on a walk-on rectangle triggers it, as it would on foot.
+            // A click on one he can reach counts even if the walk stopped short
+            // (around a post, say): its name was showing when it was clicked.
             W16(0xFF06B4, 0);
-            if (walkOnTrigger()) continue;
+            if (walkOnTrigger(aimed ? u16(M.walkObject) : 0)) continue;
         }
         bool settle = false, skipHover = false;   // 0x1222 and 0x1280
         if (RS16(CursorY) < 0xA8) {

@@ -29,6 +29,7 @@ u16 standOffset(u32 animBase, u16 index, u16* yOffset = nullptr);   // 0x197E: f
 
 // Addition for pointer devices: walk the lead towards a clicked point, as far
 // as the room's collision map and gateways allow.
-void clickWalk(int x, int y, int object = 0);
+// Returns true when it aimed at a reachable spot inside the object's hotspot.
+bool clickWalk(int x, int y, int object = 0);
 
 }  // namespace actor

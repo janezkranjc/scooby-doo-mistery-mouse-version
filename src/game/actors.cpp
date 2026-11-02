@@ -540,11 +540,10 @@ bool pointInsideHotspot(int object, u16& outX, u16& outY) {
 
 }  // namespace
 
-void clickWalk(int x, int y, int object) {
-    {
-        u16 hx, hy;
-        if (pointInsideHotspot(object, hx, hy)) { x = hx; y = hy; }
-    }
+bool clickWalk(int x, int y, int object) {
+    u16 hx, hy;
+    const bool intoHotspot = pointInsideHotspot(object, hx, hy);
+    if (intoHotspot) { x = hx; y = hy; }
     const int maxX = (R16(0xFF06C6) << 3) - 1, maxY = (R16(0xFF06C8) << 3) - 1;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
@@ -565,7 +564,7 @@ void clickWalk(int x, int y, int object) {
         reachable = !lineBlocked(gx, gy);
     }
     if (!reachable) { tx = stopX; ty = stopY; }
-    if (tx == R16(kPosX) && ty == R16(kPosY)) return;
+    if (tx == R16(kPosX) && ty == R16(kPosY)) return intoHotspot;
     // Scripted walks expect the "busy" flag, and read their wait option from
     // the current instruction; point that at a zero word.
     const u32 savedPc = vm::pc;
@@ -575,6 +574,7 @@ void clickWalk(int x, int y, int object) {
     walkLeadTo(tx, ty, 1, 0);
     BCLR(EngineFlags, 7);
     vm::pc = savedPc;
+    return intoHotspot;
 }
 
 u16 standOffset(u32 base, u16 index, u16* yOffset) {
