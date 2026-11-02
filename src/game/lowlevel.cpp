@@ -12,7 +12,8 @@ bool allowSkip = false;
 // black between scenes, and the port does that work in no time at all. So
 // the bulk routines add up roughly what they cost a 7.67 MHz 68000 and give
 // that time back as frames, which keeps the pauses of the original. The frame
-// interrupt keeps running meanwhile, as it does there. A frame wait uses up
+// interrupt keeps running meanwhile, as it does there, unless the original
+// has interrupts masked at that point (IrqMask). A frame wait uses up
 // whatever is left over, because the original would have been waiting too.
 namespace {
 // Tuned so the gaps match the reference emulator: of the 127840 cycles in a
@@ -57,6 +58,7 @@ static inline u16 autoInc() { return M.vdp.reg[15]; }
 constexpr u32 kVramWordWrite = 24, kVramWordFill = 14, kDmaWord = 5;
 
 u32 vramWrite(u16 addr, u16 words, u32 src) {
+    IrqMask mask;
     const u16 step = autoInc();
     for (u32 i = 0; i < words; i++) {
         M.vdp.vramPoke(addr, R16(src));
@@ -74,6 +76,7 @@ void cramPoke(u16 addr, u16 value) { M.vdp.cramPoke((addr & 0x7F) >> 1, value); 
 // 0x99F6 / 0x9A3C. The original splits a transfer that crosses a 64 KB source
 // boundary into two DMA operations. The copy here has no such limit.
 u32 dmaVram(u32 src, u16 addr, u16 words) {
+    IrqMask mask;
     const u16 step = autoInc();
     for (u32 i = 0; i < words; i++) {
         M.vdp.vramPoke(addr, R16(src));
@@ -95,6 +98,7 @@ u32 dmaCram(u32 src, u16 addr, u16 words) {
 
 // 0x9BE4. A count of zero wraps to 65536 words in the original loop.
 void vramFill(u16 addr, u16 words, u16 value) {
+    IrqMask mask;
     const u16 step = autoInc();
     u32 n = words ? words : 0x10000;
     for (u32 i = 0; i < n; i++) {

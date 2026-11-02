@@ -168,7 +168,7 @@ Options parse(int argc, char** argv) {
 
 // One presented frame: interrupt work, a slice of game logic, then the picture.
 void stepFrame(std::vector<u16>& frame) {
-    irq::vblank();
+    if (!M.irqMasked) irq::vblank();
     M.runGameSlice();
     M.vdp.renderFrame(frame, irq::beforeLine);
     M.frameCounter++;
@@ -212,7 +212,7 @@ int runHeadless(const Options& o) {
         }
         if (o.solve || !o.replay.empty()) {
             // No picture is needed while searching.
-            irq::vblank();
+            if (!M.irqMasked) irq::vblank();
             M.runGameSlice();
             M.frameCounter++;
             if (!autoplay::active && autoplay::idleCalls > 0 && solveFrom == 0) solveFrom = n + 200;
@@ -437,6 +437,7 @@ int runWindowed(const Options& o) {
     bool holdInput = false;       // after the dialog closes, until every button is let go
     int lastWidth = 256;
 
+    bool escPressed = false;
     while (window.isOpen()) {
         bool toggle = false;
         const sf::FloatRect eventPic = pictureRect(window.getSize());
@@ -462,7 +463,7 @@ int runWindowed(const Options& o) {
             if (const auto* k = event->getIf<sf::Event::KeyPressed>()) {
                 noteKey(k->code, true);
                 using K = sf::Keyboard::Key;
-                if (k->code == K::Escape) { if (fullscreen) toggle = true; else window.close(); }
+                if (k->code == K::Escape) escPressed = true;   // skips, as in the classic adventures; never quits
                 if (k->code == K::F11 || k->code == K::F || (k->code == K::Enter && k->alt)) toggle = true;
                 if (k->code == K::F10) {   // the extended pause menu, normally behind a button code on the title screen
                     M.wr8(0xFF09ED, M.rd8(0xFF09ED) | 2);
@@ -562,8 +563,10 @@ int runWindowed(const Options& o) {
             if (M.pad1 & ~lastPad) M.skipRequested = true;
             lastPad = M.pad1;
         }
+        if (escPressed) { M.skipRequested = true; M.skipLine = true; escPressed = false; }
         stepFrame(frame);
         M.skipRequested = false;
+        M.skipLine = false;
         if (snapshotWait > 0) {
             if (M.snapshotSerial != snapshotSeen) { snapshotWait = 0; dialog.open(M.snapshot); }
             else if (--snapshotWait == 0) M.snapshotRequested = false;   // a cutscene is running: no saving now

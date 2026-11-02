@@ -413,11 +413,13 @@ void load() {
 }
 
 void enter() {
+    ll::setIrqMask(true);
     W8(PadState, 0xFF);
     BCLR(EngineFlags, 3);
     load();
     BSET(EngineFlags, 2);
     BSET(EngineFlags, 6);
+    ll::setIrqMask(false);
     if (!BTST(0xFF2A00, 1)) ui::updatePageArrows();
     do {
         actor::update();

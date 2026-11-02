@@ -35,6 +35,7 @@ public:
     bool mouseEnabled = false, mouseMoved = false;
     bool mouseActive = false;       // the player is steering with the mouse
     bool skipRequested = false;     // a button went down this frame (for skippable screens)
+    bool skipLine = false;          // Esc this frame: end the line being shown, or the episode intro
     int mouseX = 0, mouseY = 0;
     bool mouseLeft = false, mouseRight = false, mouseMiddle = false;   // held buttons, for the menus
     int mouseWheel = 0;             // notches turned since last read, up positive
@@ -42,6 +43,9 @@ public:
     bool walkRequest = false;
     int walkX = 0, walkY = 0;
     int walkObject = 0;             // script object under the pointer at the click, or 0
+    // The 68000's interrupt mask is up: frames handed back meanwhile pass
+    // without the frame interrupt (see ll::IrqMask).
+    bool irqMasked = false;
     int debugRoom = 0;              // testing aid: jump to this room once the episode has started
     std::vector<std::pair<u32, u8>> debugPokes;   // testing aid: bytes written before that jump
     // Saved games (game/savestate.h). The host asks for a snapshot or hands

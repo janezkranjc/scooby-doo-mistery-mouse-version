@@ -102,6 +102,7 @@ void buildSprites() {
         out += 8;
     };
     const bool mouse = M.mouseEnabled && M.mouseActive;
+    M.vdp.firstSpriteFree = mouse;
     if (mouse) {   // addition: with a mouse the arrow is always on screen, on top
         emit(u16(M.mouseY - 8 + 0x80), u16(0x0500 | link), R16(0xFF06E4), u16(M.mouseX - 8 + 0x80));
         link++;
@@ -357,7 +358,10 @@ void control() {
     }
     // The pointer device places the pointer directly (an addition to the original).
     if (M.mouseEnabled && (M.mouseMoved || M.mouseActive)) {
-        int mx = M.mouseX - 8, my = M.mouseY - 8;
+        // The room tests its hotspots 16 pixels above the pointer's corner,
+        // which is the crosshair's centre. The panel tests cells at the corner
+        // itself, so over the panel the centre goes there instead.
+        int mx = M.mouseX - 8, my = M.mouseY >= 0xA8 ? M.mouseY : M.mouseY - 8;
         if (mx < -8) mx = -8;
         if (mx > 0xF7) mx = 0xF7;
         if (my < 0) my = 0;

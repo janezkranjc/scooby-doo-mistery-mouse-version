@@ -111,7 +111,8 @@ breaks.
 | F10 | Cheats: adds the game's hidden room select and object mover to the pause menu (Enter). With the object mover you can put any item in your inventory |
 | F9 | CRT filter: off, scanlines, or a curved CRT screen. The choice is remembered |
 | F11, F or Alt+Enter | Toggle fullscreen at the desktop resolution |
-| Esc | Leave fullscreen, or quit when windowed |
+| Esc | Skip: ends the line being spoken, skips the intro screens |
+| Cmd+Q (macOS), Alt+F4, or F5 then Quit | Quit |
 
 ## Saving and loading
 

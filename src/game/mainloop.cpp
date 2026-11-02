@@ -76,6 +76,7 @@ void introParallax() {   // 0x17AE: per-line scroll tables, bands moving at diff
 }
 
 void episodeIntro() {   // 0x13BA: title card with the van driving past
+    ll::IrqMask mask;   // lowered for the drive itself
     const u32 savedVbl = R32(VBlankHandler);
     W32(VBlankHandler, irq::VblPlain);
     for (u16 r : {0x9100, 0x9200, 0x9003, 0x8D2F, 0x855C}) M.vdp.regWord(r);
@@ -104,6 +105,7 @@ void episodeIntro() {   // 0x13BA: title card with the van driving past
     for (int i = 0; i < 64; i++) W16(TargetPalette + 2 * i, R16(pal + 2 * i));
     for (int i = 0; i < 30; i++) W16(TargetPalette + 2 + 2 * i, R16(0x32482 + 2 * i));
     if (R16(EpisodeIndex) == 0) W16(TargetPalette, 0);
+    ll::setIrqMask(false);
     introParallax();
     introSprites();
     snd::startSequence(0x7C);
@@ -137,6 +139,7 @@ void episodeIntro() {   // 0x13BA: title card with the van driving past
         }
         const u8 now = R8(PadState) & 0xF0;
         if (now != 0xF0 && now != (R8(PadPrev) & 0xF0)) break;   // any button skips
+        if (M.skipLine) break;   // and so does Esc
         if (R16(0xFF0A18) == 0x10E) break;
     }
     ll::fadeOut();
@@ -514,6 +517,7 @@ void titleAndRun() {
         adventureLoop();         // applies it at once; the state replaces everything set up below
     }
     snd::stopAll();
+    ll::setIrqMask(true);   // lowered again by the first room entry
     resetGameState();
     loadEpisode();
     actor::initLeads();

@@ -12,6 +12,16 @@ void waitFrames(u16 count);        // 0x9742: waits count+1 frames
 void chargeCycles(u32 cycles);     // time the original would have spent; given back as frames
 void idleFrame();                  // one frame of a busy-wait on interrupt-updated state
 
+// `move.w sr,-(a7)` / `move.w #$2700,sr` ... `move.w (a7)+,sr`. The original
+// masks interrupts while it loads a room or sets up a screen, so the frame
+// work never sees half-loaded state however long the load takes.
+struct IrqMask {
+    bool saved;
+    IrqMask() : saved(M.irqMasked) { M.irqMasked = true; }
+    ~IrqMask() { M.irqMasked = saved; }
+};
+inline void setIrqMask(bool on) { M.irqMasked = on; }   // `move.w #$2700,sr` / `move.w #$2000,sr`
+
 // Video memory. Sources are bus addresses (ROM or RAM). Functions that the
 // original leaves pointing past the data return the advanced source address.
 u32 vramWrite(u16 addr, u16 words, u32 src);   // 0x992C

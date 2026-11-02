@@ -23,6 +23,9 @@ public:
 
     // Lifts the hardware's per-line sprite limits (an enhancement, off by default).
     bool unlimitedSprites = false;
+    // The first sprite in the list costs nothing against those limits. The
+    // port's mouse pointer goes there, so it never cuts the game's sprites.
+    bool firstSpriteFree = false;
 
     void reset();
 

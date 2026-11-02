@@ -614,6 +614,7 @@ void titleFlash() {
 
 void titleMenu() {
     ll::fadeOut();
+    ll::setIrqMask(true);
     BCLR(0xFF09ED, 2);
     BCLR(0xFF09ED, 4);
     BCLR(0xFF09EB, 7);
@@ -671,6 +672,7 @@ void titleMenu() {
     ll::vramWrite(0xFC00, 0x34, kLogoSprites);
     for (int i = 0; i < 64; i++) W16(TargetPalette + 2 * i, R16(0x16CB8 + 2 * i));
     for (int i = 0; i < 30; i++) W16(TargetPalette + 2 + 2 * i, R16(0x32482 + 2 * i));
+    ll::setIrqMask(false);
     makePassword();
     ll::fadeIn(TargetPalette);
     BSET(0xFF09EB, 7);

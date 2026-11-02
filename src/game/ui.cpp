@@ -245,6 +245,7 @@ void waitMessage() {
         const u16 left = R16(0xFF080A);
         W16(0xFF080A, u16(left - step));
         if (left < step) return;
+        if (M.skipLine) return;   // addition: Esc ends the line
         if (!BTST(PadState, 6)) {
             while (!BTST(PadState, 6)) ll::idleFrame();
             return;

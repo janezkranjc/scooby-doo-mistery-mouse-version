@@ -102,7 +102,8 @@ void Vdp::spriteLine(int y, Px* buf, int w) const {
         const int wc = ((size >> 2) & 3) + 1, hc = (size & 3) + 1;
 
         if (y >= sy && y < sy + hc * 8) {
-            if (lineSprites-- <= 0) break;
+            const bool exempt = firstSpriteFree && n == 0;
+            if (!exempt && lineSprites-- <= 0) break;
             const uint16_t attr = vramWord(uint16_t(a + 4));
             const int xraw = vramWord(uint16_t(a + 6)) & 0x1FF;
             if (xraw == 0) {
@@ -117,7 +118,7 @@ void Vdp::spriteLine(int y, Px* buf, int w) const {
             int row = y - sy;
             if (vf) row = hc * 8 - 1 - row;
             for (int cx = 0; cx < wc * 8; cx++) {
-                if (linePixels-- <= 0) break;
+                if (!exempt && linePixels-- <= 0) break;
                 if (masked) continue;
                 const int x = sx + cx;
                 if (x < 0 || x >= w) continue;
