@@ -187,6 +187,23 @@ void drawPatch(u16 state) {
 
 }  // namespace
 
+Cells hotspotCells(u16 index) {
+    const u32 r = hotspot(index);
+    Cells c{RS16(r), RS16(r + 2), RS16(r + 4), RS16(r + 6)};
+    // Addition: the upstairs hallway's stairs are a 3 by 2 cell patch on the
+    // banister post, leaving most of the stairwell beside it blank. This
+    // covers the stairwell too. The right edge stays put, so walking along
+    // the balcony sets the stairs off no sooner than before.
+    if (R16(EpisodeIndex) == 0 && R16(0xFF06AC) == 9 && index == 53 && c.x == 4 && c.y == 14 && c.w == 3 && c.h == 2)
+        c = {0, 10, 7, 8};
+    return c;
+}
+
+bool inHotspot(u16 index, s16 col, s16 row) {
+    const Cells c = hotspotCells(index);
+    return col >= c.x && row >= c.y && col < s16(c.x + c.w) && row < s16(c.y + c.h);
+}
+
 bool blockedProbe() {
     const s16 x = RS16(0xFF064A), y = RS16(0xFF064E);
     if (x < 0 || y < 0) return true;

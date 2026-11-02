@@ -178,9 +178,8 @@ Walkable floodFromLead() {
 bool canWalkOnto(const Walkable& f, u16 number) {
     const u32 o = objectAddr(number);
     if (R16(o + 2) == 0) return false;
-    const u32 hdr = R32(RoomHeaderPtr);
-    const u32 r = R32(R32(hdr + 0x24) + u32(R16(o + 2) - 1) * 4) + R32(hdr + 0x1C);
-    const int x0 = RS16(r) * 8, y0 = RS16(r + 2) * 8, x1 = x0 + RS16(r + 4) * 8, y1 = y0 + RS16(r + 6) * 8;
+    const room::Cells c = room::hotspotCells(R16(o + 2));
+    const int x0 = c.x * 8, y0 = c.y * 8, x1 = x0 + c.w * 8, y1 = y0 + c.h * 8;
     for (int gy = y0; gy < y1; gy++)
         for (int gx = x0; gx < x1; gx++)
             if (f.at(gx, gy)) return true;

@@ -13,6 +13,11 @@ void resetActors();    // 0x7A8C
 void objectPass();     // 0x7C04: per-frame object timers and redraws
 void scrollUpdates();  // dispatches 0xFC3A / 0xFD5E / 0xFE74 / 0xFF68 from 0xFF0AB3
 
+// Hotspot rectangles in cells, as pointing and walk-on checks see them.
+struct Cells { s16 x, y, w, h; };
+Cells hotspotCells(u16 index);
+bool inHotspot(u16 index, s16 col, s16 row);
+
 // Collision. Both test one pixel against the room's collision map.
 bool blockedProbe();                 // 0x7476: point at 0xFF064A / 0xFF064E
 bool blockedTrial(u16 maxX, u16 maxY);   // 0x73D6: point at 0xFF0642 / 0xFF0646, with bounds

@@ -286,15 +286,6 @@ void performAction() {
     }
 }
 
-u32 hotspotRect(u16 index) {
-    const u32 hdr = R32(RoomHeaderPtr);
-    return R32(R32(hdr + 0x24) + s16(u16((index - 1) << 2))) + R32(hdr + 0x1C);
-}
-
-bool inRect(u32 r, s16 col, s16 row) {
-    return col >= RS16(r) && row >= RS16(r + 2) && col < s16(RS16(r) + RS16(r + 4)) && row < s16(RS16(r + 2) + RS16(r + 6));
-}
-
 s16 defaultVerb(u16 objectNumber) {
     if (objectNumber < 3) return 10;
     return RS8(vm::objectAddr(objectNumber) + 0x16);
@@ -323,7 +314,7 @@ u16 pointerTarget() {
         if (BTST(o + 0x18, 1)) {
             const u32 s = u32(R8(o + 0x19)) << 2;
             if (nearActor(RS16(0xFF04E4 + s), RS16(0xFF04FC + s), u32(u16((R16(o + 2) - 1) * 2)))) hit = u16(n + 3);
-        } else if (R16(o + 2) != 0 && inRect(hotspotRect(R16(o + 2)), col, row)) {
+        } else if (R16(o + 2) != 0 && room::inHotspot(R16(o + 2), col, row)) {
             hit = u16(n + 3);
         }
     }
@@ -345,7 +336,7 @@ bool walkOnTrigger(u16 clicked = 0) {
     u16 hit = 0;
     u32 o = 0xFF1200;
     for (u16 n = 0; s16(n) <= RS16(0xFF06F4); n++, o += 0x1A)
-        if (R16(o + 6) == R16(0xFF06AC) && !BTST(o + 0x18, 1) && R16(o + 2) != 0 && inRect(hotspotRect(R16(o + 2)), col, row))
+        if (R16(o + 6) == R16(0xFF06AC) && !BTST(o + 0x18, 1) && R16(o + 2) != 0 && room::inHotspot(R16(o + 2), col, row))
             hit = u16(n + 3);
     if (!hit) hit = clicked;
     W16(0xFF06AE, hit);

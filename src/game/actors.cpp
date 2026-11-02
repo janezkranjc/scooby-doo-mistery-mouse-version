@@ -517,15 +517,12 @@ bool pixelFree(u16 x, u16 y) {
 // pixel: as in the original's check (0x12CC), the last one in the table whose
 // rectangle holds it.
 u16 walkOnObjectAt(int x, int y) {
-    const u32 hdr = R32(RoomHeaderPtr);
     const s16 col = s16(x >> 3), row = s16(y >> 3);
     u16 hit = 0;
     u32 o = 0xFF1200;
     for (u16 n = 0; s16(n) <= RS16(0xFF06F4); n++, o += 0x1A) {
         if (R16(o + 6) != R16(0xFF06AC) || BTST(o + 0x18, 1) || R16(o + 2) == 0) continue;
-        const u32 r = R32(R32(hdr + 0x24) + s16(u16((R16(o + 2) - 1) << 2))) + R32(hdr + 0x1C);
-        if (col >= RS16(r) && row >= RS16(r + 2) && col < RS16(r) + RS16(r + 4) && row < RS16(r + 2) + RS16(r + 6))
-            hit = u16(n + 3);
+        if (room::inHotspot(R16(o + 2), col, row)) hit = u16(n + 3);
     }
     return hit;
 }
@@ -540,9 +537,8 @@ bool pointInsideHotspot(int object, u16& outX, u16& outY) {
     if (object < 3) return false;
     const u32 o = vm::objectAddr(u16(object));
     if (BTST(o + 0x18, 1) || R16(o + 2) == 0) return false;
-    const u32 hdr = R32(RoomHeaderPtr);
-    const u32 r = R32(R32(hdr + 0x24) + s16(u16((R16(o + 2) - 1) << 2))) + R32(hdr + 0x1C);
-    const int x0 = RS16(r) * 8, y0 = RS16(r + 2) * 8, x1 = x0 + RS16(r + 4) * 8, y1 = y0 + RS16(r + 6) * 8;
+    const room::Cells c = room::hotspotCells(R16(o + 2));
+    const int x0 = c.x * 8, y0 = c.y * 8, x1 = x0 + c.w * 8, y1 = y0 + c.h * 8;
     const int lx = RS16(kPosX), ly = RS16(kPosY);
     for (int pass = 0; pass < 2; pass++) {
         long best = -1;
