@@ -513,9 +513,29 @@ bool pixelFree(u16 x, u16 y) {
     return !room::blockedProbe();
 }
 
+// The object whose walk-on script would fire with the lead's feet at this
+// pixel: as in the original's check (0x12CC), the last one in the table whose
+// rectangle holds it.
+u16 walkOnObjectAt(int x, int y) {
+    const u32 hdr = R32(RoomHeaderPtr);
+    const s16 col = s16(x >> 3), row = s16(y >> 3);
+    u16 hit = 0;
+    u32 o = 0xFF1200;
+    for (u16 n = 0; s16(n) <= RS16(0xFF06F4); n++, o += 0x1A) {
+        if (R16(o + 6) != R16(0xFF06AC) || BTST(o + 0x18, 1) || R16(o + 2) == 0) continue;
+        const u32 r = R32(R32(hdr + 0x24) + s16(u16((R16(o + 2) - 1) << 2))) + R32(hdr + 0x1C);
+        if (col >= RS16(r) && row >= RS16(r + 2) && col < RS16(r) + RS16(r + 4) && row < RS16(r + 2) + RS16(r + 6))
+            hit = u16(n + 3);
+    }
+    return hit;
+}
+
 // The nearest free, reachable point inside an object's hotspot rectangle.
 // Walk-on scripts fire when the lead's feet are inside that rectangle, so a
-// click on such a hotspot should end up there.
+// click on such a hotspot should end up there. Where rectangles overlap the
+// check picks only one of them (the café's archway shares its corner with the
+// bottle of oil), so points where this object is the one picked come first.
+// Walking with the pad, the lead crosses those before reaching the overlap.
 bool pointInsideHotspot(int object, u16& outX, u16& outY) {
     if (object < 3) return false;
     const u32 o = vm::objectAddr(u16(object));
@@ -524,18 +544,22 @@ bool pointInsideHotspot(int object, u16& outX, u16& outY) {
     const u32 r = R32(R32(hdr + 0x24) + s16(u16((R16(o + 2) - 1) << 2))) + R32(hdr + 0x1C);
     const int x0 = RS16(r) * 8, y0 = RS16(r + 2) * 8, x1 = x0 + RS16(r + 4) * 8, y1 = y0 + RS16(r + 6) * 8;
     const int lx = RS16(kPosX), ly = RS16(kPosY);
-    long best = -1;
-    for (int y = y1 - 1; y >= y0; y -= 2)
-        for (int x = x0; x < x1; x += 2) {
-            if (x < 0 || y < 0) continue;
-            const long d = long(x - lx) * (x - lx) + long(y - ly) * (y - ly);
-            if (best >= 0 && d >= best) continue;
-            if (!pixelFree(u16(x), u16(y)) || !reachableFromLead(u16(x), u16(y))) continue;
-            best = d;
-            outX = u16(x);
-            outY = u16(y);
-        }
-    return best >= 0;
+    for (int pass = 0; pass < 2; pass++) {
+        long best = -1;
+        for (int y = y1 - 1; y >= y0; y -= 2)
+            for (int x = x0; x < x1; x += 2) {
+                if (x < 0 || y < 0) continue;
+                const long d = long(x - lx) * (x - lx) + long(y - ly) * (y - ly);
+                if (best >= 0 && d >= best) continue;
+                if (pass == 0 && walkOnObjectAt(x, y) != object) continue;
+                if (!pixelFree(u16(x), u16(y)) || !reachableFromLead(u16(x), u16(y))) continue;
+                best = d;
+                outX = u16(x);
+                outY = u16(y);
+            }
+        if (best >= 0) return true;
+    }
+    return false;
 }
 
 }  // namespace
