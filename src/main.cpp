@@ -424,6 +424,7 @@ int runWindowed(const Options& o) {
     } else if (!o.crt.empty() && o.crt != "off") {
         std::fprintf(stderr, "The CRT filter is not available: this graphics driver has no shader support.\n");
     }
+    bool arrowsWalk = readSetting("arrows") == "walk";   // Tab
     sf::Clock osdClock;           // a short note in the corner after F9
     std::string osd;
     std::vector<u16> frame;
@@ -468,6 +469,12 @@ int runWindowed(const Options& o) {
                 if (k->code == K::F10) {   // the extended pause menu, normally behind a button code on the title screen
                     M.wr8(0xFF09ED, M.rd8(0xFF09ED) | 2);
                     osd = "Cheats on: Enter opens the pause menu";
+                    osdClock.restart();
+                }
+                if (k->code == K::Tab) {
+                    arrowsWalk = !arrowsWalk;
+                    writeSetting("arrows", arrowsWalk ? "walk" : "pointer");
+                    osd = arrowsWalk ? "Arrow keys: walk" : "Arrow keys: move the pointer";
                     osdClock.restart();
                 }
                 if (k->code == K::F9) {
@@ -522,6 +529,8 @@ int runWindowed(const Options& o) {
             if (inside) {
                 const int gx = int(fx * float(M.vdp.width())), gy = int(fy * 224.f);
                 if (gx != M.mouseX || gy != M.mouseY) { M.mouseMoved = true; M.mouseActive = true; }
+                if (M.mouseX >= 0 && (sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) || sf::Mouse::isButtonPressed(sf::Mouse::Button::Right)))
+                    M.mouseActive = true;   // a click takes control back from the arrow keys
                 M.mouseX = gx; M.mouseY = gy; M.mouseEnabled = true;
                 M.mouseLeft = sf::Mouse::isButtonPressed(sf::Mouse::Button::Left);
                 M.mouseRight = sf::Mouse::isButtonPressed(sf::Mouse::Button::Right);
@@ -539,6 +548,16 @@ int runWindowed(const Options& o) {
             static bool shown = false;
             const bool want = title || dialog.isOpen();
             if (want != shown) { shown = want; window.setMouseCursorVisible(want); }
+        }
+        // Arrow keys (an addition): with arrowsWalk they walk the lead, as the
+        // pad does when the pointer is put away. Otherwise they move the
+        // pointer. Either way they take over from the mouse until it is used
+        // again.
+        if ((M.pad1 & (PadUp | PadDown | PadLeft | PadRight)) && M.rd32(VBlankHandler) != irq::VblTitle) {
+            M.mouseActive = false;
+            const u8 engine = M.rd8(0xFF09DC);
+            const bool pointerIdle = (engine & 0x08) && !(engine & 0x80) && !(M.rd8(0xFF09DE) & 0x04) && !(M.rd8(0xFF2A00) & 0x02);
+            if (arrowsWalk && pointerIdle) M.pad1 = PadA;   // the pad's cancel puts the pointer away
         }
         // The click or key that closed the dialog must not reach the game.
         if (holdInput) {

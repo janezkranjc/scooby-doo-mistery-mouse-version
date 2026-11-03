@@ -104,7 +104,8 @@ breaks.
 | Click the panel's arrow button, middle click, or D | Swap the verb panel and the inventory |
 | Title menus | Point at an option and click it. On the password screen click letters and commands, click in the password to move the caret, right click to go back |
 | Sound test | Mouse wheel picks the tune, left click plays, middle click stops. Click the line at the bottom, or right click, to leave. On the pad: arrows pick, B plays, C stops, A leaves |
-| Arrow keys | Walk directly, or move the pointer |
+| Arrow keys | Move the pointer, or walk Shaggy directly after Tab. They take over from the mouse until you move or click it |
+| Tab | Switch the arrow keys between moving the pointer and walking. The choice is remembered |
 | A / S / D, or Z / X / C | Pad buttons A / B / C |
 | Enter | Start: confirm in menus, pause in game |
 | F5 | Save and load: opens the saved games dialog (see below) |
